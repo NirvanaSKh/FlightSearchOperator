@@ -6,14 +6,21 @@ import openai
 import streamlit as st
 import os
 
-# Use Streamlit Secrets if available, otherwise fallback to environment variables
+# ✅ Read API keys from Streamlit Secrets or fallback to environment variables
 API_KEY = st.secrets.get("AMADEUS_API_KEY", os.getenv("AMADEUS_API_KEY"))
 API_SECRET = st.secrets.get("AMADEUS_API_SECRET", os.getenv("AMADEUS_API_SECRET"))
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
 
+# ✅ Debug: Print keys (DO NOT DO THIS IN PRODUCTION)
+st.write("🔍 Debugging: API Keys Loaded Successfully")
+st.write(f"AMADEUS_API_KEY: {'✔ Loaded' if API_KEY else '❌ Missing'}")
+st.write(f"AMADEUS_API_SECRET: {'✔ Loaded' if API_SECRET else '❌ Missing'}")
+st.write(f"OPENAI_API_KEY: {'✔ Loaded' if OPENAI_API_KEY else '❌ Missing'}")
+
+# ✅ Stop if keys are missing
 if not API_KEY or not API_SECRET or not OPENAI_API_KEY:
-    st.error("🚨 API keys are missing! Please set them in Streamlit Secrets or Environment Variables.")
-    st.stop()  # Stops execution if API keys are missing
+    st.error("🚨 API keys are missing! Please set them in Streamlit Secrets.")
+    st.stop()
 
 
 
