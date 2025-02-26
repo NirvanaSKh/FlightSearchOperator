@@ -22,21 +22,23 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Chatbot")
-st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from New York to Singapore on March 10 for 2 adults and 1 child')")
+st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from Berlin to Mumbai on May 5 for 2 adults')")
 
-# ✅ Function to Convert City Name to IATA Code
+# ✅ Function to Get IATA Code for Any City Using Amadeus API
 def get_iata_code(city_name):
-    airport_codes = {
-        "New York": "JFK",
-        "London": "LHR",
-        "Singapore": "SIN",
-        "Dubai": "DXB",
-        "Los Angeles": "LAX",
-        "Paris": "CDG",
-        "Tokyo": "HND",
-        "Delhi": "DEL"
-    }
-    return airport_codes.get(city_name, city_name)  # Default to city_name if unknown
+    """Retrieve the IATA airport code for a given city using Amadeus API."""
+    try:
+        response = amadeus.reference_data.locations.get(
+            keyword=city_name,
+            subType="CITY,AIRPORT"
+        )
+        if response.data:
+            return response.data[0]["iataCode"]  # Get first matching IATA code
+        else:
+            return None  # No matching IATA code found
+    except ResponseError as error:
+        st.error(f"❌ Error fetching IATA code for {city_name}: {error}")
+        return None
 
 # ✅ Function to Convert Date to `YYYY-MM-DD`
 def convert_to_iso_date(date_str):
@@ -68,8 +70,17 @@ if user_input:
         flight_details = json.loads(flight_info)
 
         # ✅ Convert Data for Amadeus API Compatibility
-        origin = get_iata_code(flight_details.get("origin", "LHR"))
-        destination = get_iata_code(flight_details.get("destination", "CDG"))
+        origin_city = flight_details.get("origin", "")
+        destination_city = flight_details.get("destination", "")
+
+        # ✅ Get IATA codes dynamically
+        origin = get_iata_code(origin_city)
+        destination = get_iata_code(destination_city)
+
+        if not origin or not destination:
+            st.error(f"❌ Could not determine airport codes for '{origin_city}' or '{destination_city}'. Please check your input.")
+            st.stop()
+
         departure_date = convert_to_iso_date(flight_details.get("departure_date", "2025-06-10"))
         return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else None
         adults = flight_details.get("adults", 1)
@@ -138,4 +149,3 @@ if user_input:
 
     except json.JSONDecodeError as e:
         st.error(f"🚨 Error: AI response is not valid JSON. OpenAI output may have formatting issues. {e}")
-
