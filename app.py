@@ -6,13 +6,18 @@ import openai
 import streamlit as st
 import os
 
+# Use Streamlit Secrets if available, otherwise fallback to environment variables
+API_KEY = st.secrets.get("AMADEUS_API_KEY", os.getenv("AMADEUS_API_KEY"))
+API_SECRET = st.secrets.get("AMADEUS_API_SECRET", os.getenv("AMADEUS_API_SECRET"))
+OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
+
+if not API_KEY or not API_SECRET or not OPENAI_API_KEY:
+    st.error("🚨 API keys are missing! Please set them in Streamlit Secrets or Environment Variables.")
+    st.stop()  # Stops execution if API keys are missing
+
+
+
 # ✅ Step 1: Set Up API Credentials
-API_KEY = st.secrets["AMADEUS_API_KEY"]
-API_SECRET = st.secrets["AMADEUS_API_SECRET"]
-OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
-
-
-
 
 amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
 openai.api_key = OPENAI_API_KEY
