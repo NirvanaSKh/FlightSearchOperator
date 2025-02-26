@@ -23,20 +23,35 @@ if not API_KEY or not API_SECRET or not OPENAI_API_KEY:
 amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-# ✅ Streamlit UI
-st.title("✈️ Flight Search Chatbot")
-st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from Berlin to Mumbai on May 5 for 2 adults')")
+# ✅ Cache for storing known IATA codes (to reduce API calls)
+iata_cache = {
+    "London": "LON",
+    "Delhi": "DEL",
+    "New York": "NYC",
+    "Los Angeles": "LAX",
+    "Paris": "PAR",
+    "Tokyo": "TYO",
+    "Dubai": "DXB",
+    "Mumbai": "BOM",
+    "Singapore": "SIN",
+    "Berlin": "BER"
+}
 
-# ✅ Function to Get IATA Code for Any City Using Amadeus API
+# ✅ Function to Get IATA Code (Use Cache First)
 def get_iata_code(city_name):
-    """Retrieve the IATA airport code for a given city using Amadeus API."""
+    """Retrieve IATA airport code using cache, otherwise fetch from Amadeus API."""
+    if city_name in iata_cache:
+        return iata_cache[city_name]
+
     try:
         response = amadeus.reference_data.locations.get(
             keyword=city_name,
             subType="CITY,AIRPORT"
         )
         if response.data:
-            return response.data[0]["iataCode"]  # Get first matching IATA code
+            iata_code = response.data[0]["iataCode"]
+            iata_cache[city_name] = iata_code  # Cache the new IATA code
+            return iata_code
         else:
             return None  # No matching IATA code found
     except ResponseError as error:
@@ -102,7 +117,7 @@ if user_input:
         origin_city = flight_details.get("origin", "")
         destination_city = flight_details.get("destination", "")
 
-        # ✅ Get IATA codes dynamically
+        # ✅ Get IATA codes dynamically (cached to reduce API calls)
         origin = get_iata_code(origin_city)
         destination = get_iata_code(destination_city)
 
@@ -145,28 +160,7 @@ if user_input:
                     return
 
                 # ✅ Extract Flight Details
-                flight_results = []
-                for flight in flights:
-                    price = float(flight["price"]["total"])
-                    airline = flight["validatingAirlineCodes"][0] if "validatingAirlineCodes" in flight else "Unknown"
-                    departure = flight["itineraries"][0]["segments"][0]["departure"]["at"]
-                    arrival = flight["itineraries"][0]["segments"][-1]["arrival"]["at"]
-                    duration = flight["itineraries"][0]["duration"]
-                    stopovers = len(flight["itineraries"][0]["segments"]) - 1  # Stops count
-
-                    total_price = price * (adults + children_count)
-
-                    flight_results.append({
-                        "Airline": airline,
-                        "Departure": departure,
-                        "Arrival": arrival,
-                        "Duration": duration,
-                        "Stops": stopovers,
-                        "Price per Person (GBP)": f"£{price:.2f}",
-                        "Total Price (GBP)": f"£{total_price:.2f}"
-                    })
-
-                df = pd.DataFrame(flight_results).sort_values(by="Total Price (GBP)")
+                df = pd.DataFrame(flights).sort_values(by=["price.total"])
 
                 st.write("🛫 **Flight Results (Sorted by Price)**:")
                 st.dataframe(df)
