@@ -37,7 +37,7 @@ iata_cache = {
     "Berlin": "BER"
 }
 
-# ✅ Function to Get IATA Code (Use Cache First)
+# ✅ Function to Get IATA Code (Uses Cache First)
 def get_iata_code(city_name):
     """Retrieve IATA airport code using cache, otherwise fetch from Amadeus API."""
     if city_name in iata_cache:
@@ -91,84 +91,6 @@ def convert_to_iso_date(date_str):
     except ValueError:
         return date_str  # Return original if conversion fails
 
-# ✅ User Input
-user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
-
-if user_input:
-    # ✅ Step 4: Extract Flight Details Using OpenAI GPT
-    response = client.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages). Ensure children list contains only numbers and is empty if there are no children."},
-            {"role": "user", "content": user_input}
-        ]
-    )
-
-    flight_info = response.choices[0].message.content  # ✅ Corrected OpenAI API usage
-
-    st.write("🔍 **AI Extracted Flight Details:**")
-    st.code(flight_info, language="json")  # ✅ Shows JSON output for debugging
-
-    try:
-        # ✅ Parse AI response using `json.loads()`
-        flight_details = json.loads(flight_info)
-
-        # ✅ Convert Data for Amadeus API Compatibility
-        origin_city = flight_details.get("origin", "")
-        destination_city = flight_details.get("destination", "")
-
-        # ✅ Get IATA codes dynamically (cached to reduce API calls)
-        origin = get_iata_code(origin_city)
-        destination = get_iata_code(destination_city)
-
-        if not origin or not destination:
-            st.error(f"❌ Could not determine airport codes for '{origin_city}' or '{destination_city}'. Please check your input.")
-            st.stop()
-
-        departure_date = convert_to_iso_date(flight_details.get("departure_date", "2025-06-10"))
-        return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else None
-        adults = flight_details.get("adults", 1)
-
-        # ✅ Fix `children` issue
-        children_ages = flight_details.get("children", [])
-        children_ages = [age for age in children_ages if isinstance(age, (int, float))]  # Remove `null` values
-        children_count = len(children_ages)  # ✅ Convert list to count
-        infants_count = sum(1 for age in children_ages if age < 2)  # ✅ Count infants properly
-
-        # ✅ Call Flight Search Function
-        def search_flights():
-            try:
-                params = {
-                    "originLocationCode": origin,
-                    "destinationLocationCode": destination,
-                    "departureDate": departure_date,
-                    "adults": adults,
-                    "children": children_count,  # ✅ Send count, not a list
-                    "infants": infants_count,  # ✅ Fixes infant count issue
-                    "currencyCode": "GBP",
-                    "max": 10
-                }
-
-                if return_date:
-                    params["returnDate"] = return_date
-
-                response = amadeus.shopping.flight_offers_search.get(**params)
-                flights = response.data
-
-                if not flights:
-                    st.error("❌ No flights found. Try different dates or locations.")
-                    return
-
-                # ✅ Extract Flight Details
-                df = pd.DataFrame(flights).sort_values(by=["price.total"])
-
-                st.write("🛫 **Flight Results (Sorted by Price)**:")
-                st.dataframe(df)
-
-            except ResponseError as error:
-                st.error(f"❌ API Error: {error}")
-
-        search_flights()
-
-    except json.JSONDecodeError as e:
-        st.error(f"🚨 Error: AI response is not valid JSON. OpenAI output may have formatting issues. {e}")
+# ✅ Streamlit UI
+st.title("✈️ Flight Search Chatbot")
+st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find
