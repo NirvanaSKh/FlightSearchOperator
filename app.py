@@ -22,7 +22,7 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Chatbot")
-st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from New York to Singapore on March 10 for 1 adult')")
+st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from New York to Singapore on March 10 for 1 adult and two 2-year-old children')")
 
 # ✅ Function to Convert City Name to IATA Code
 def get_iata_code(city_name):
@@ -53,7 +53,7 @@ if user_input:
     response = client.chat.completions.create(
         model="gpt-4",
         messages=[
-            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages)."},
+            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages). Ensure children list contains only numbers and is empty if there are no children."},
             {"role": "user", "content": user_input}
         ]
     )
@@ -73,8 +73,12 @@ if user_input:
         departure_date = convert_to_iso_date(flight_details.get("departure_date", "2025-06-10"))
         return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else None
         adults = flight_details.get("adults", 1)
+
+        # ✅ Fix `null` issue in `children`
         children_ages = flight_details.get("children", [])
-        children_count = len(children_ages)
+        children_ages = [age for age in children_ages if isinstance(age, (int, float))]  # Remove `null` values
+        children_count = len(children_ages)  # ✅ Convert to integer count
+        infants_count = sum(1 for age in children_ages if age < 2)  # ✅ Count infants properly
 
         # ✅ Call Flight Search Function
         def search_flights():
@@ -85,7 +89,7 @@ if user_input:
                     "departureDate": departure_date,
                     "adults": adults,
                     "children": children_count,  # ✅ Fixes empty children list issue
-                    "infants": sum(1 for age in children_ages if age < 2),
+                    "infants": infants_count,  # ✅ Fixes infant count issue
                     "currencyCode": "GBP",
                     "max": 10
                 }
