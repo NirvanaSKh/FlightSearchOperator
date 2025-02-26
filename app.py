@@ -4,6 +4,7 @@ import pandas as pd
 from amadeus import Client, ResponseError
 import openai
 import os
+import json  # ✅ Use JSON for safer parsing
 
 # ✅ Read API keys from Streamlit Secrets or fallback to environment variables
 API_KEY = st.secrets.get("AMADEUS_API_KEY", os.getenv("AMADEUS_API_KEY"))
@@ -17,11 +18,11 @@ if not API_KEY or not API_SECRET or not OPENAI_API_KEY:
 
 # ✅ Initialize API Clients
 amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
-client = openai.OpenAI(api_key=OPENAI_API_KEY)  # ✅ Corrected OpenAI API usage
+client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Chatbot")
-st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from London to New York on March 20 for 1 adult and 1 infant')")
+st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from New York to Singapore on March 10 for 1 adult')")
 
 # ✅ User Input
 user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
@@ -31,7 +32,7 @@ if user_input:
     response = client.chat.completions.create(
         model="gpt-4",
         messages=[
-            {"role": "system", "content": "Extract flight details from the user's input. Return output in JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages)."},
+            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages)."},
             {"role": "user", "content": user_input}
         ]
     )
@@ -39,16 +40,16 @@ if user_input:
     flight_info = response.choices[0].message.content  # ✅ Corrected OpenAI API usage
 
     st.write("🔍 **AI Extracted Flight Details:**")
-    st.json(flight_info)  # ✅ Displays JSON output for debugging
+    st.code(flight_info, language="json")  # ✅ Shows JSON output for debugging
 
     try:
-        # ✅ Parse AI response to extract search parameters dynamically
-        flight_details = eval(flight_info)  # Converts JSON-like response to a dictionary
+        # ✅ Parse AI response using `json.loads()` instead of `eval()`
+        flight_details = json.loads(flight_info)
 
         origin = flight_details.get("origin", "LHR")  # Default: London Heathrow
         destination = flight_details.get("destination", "CDG")  # Default: Paris
         departure_date = flight_details.get("departure_date", "2025-06-10")
-        return_date = flight_details.get("return_date", None)
+        return_date = flight_details.get("return_date", None)  # ✅ Converts `null` to `None`
         adults = flight_details.get("adults", 1)
         children_ages = flight_details.get("children", [])
 
@@ -108,5 +109,6 @@ if user_input:
 
         search_flights()
 
-    except Exception as e:
-        st.error(f"🚨 Error extracting flight details: {e}")
+    except json.JSONDecodeError as e:
+        st.error(f"🚨 Error: AI response is not valid JSON. OpenAI output may have formatting issues. {e}")
+
