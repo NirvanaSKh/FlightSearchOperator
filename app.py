@@ -3,17 +3,14 @@ import datetime
 import pandas as pd
 from amadeus import Client, ResponseError
 import openai
+import streamlit as st
 import os
 
 # ✅ Step 1: Set Up API Credentials
-# Load environment variables
+API_KEY = st.secrets["AMADEUS_API_KEY"]
+API_SECRET = st.secrets["AMADEUS_API_SECRET"]
+OPENAI_API_KEY = st.secrets["OPENAI_API_KEY"]
 
-import os
-
-openai.api_key = os.getenv("OPENAI_API_KEY")
-
-API_KEY = os.getenv("AMADEUS_API_KEY")
-API_SECRET = os.getenv("AMADEUS_API_SECRET")
 
 
 
