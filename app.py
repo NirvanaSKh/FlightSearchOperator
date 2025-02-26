@@ -3,16 +3,19 @@ import datetime
 import pandas as pd
 from amadeus import Client, ResponseError
 import openai
-from dotenv import load_dotenv
 import os
 
 # ✅ Step 1: Set Up API Credentials
 # Load environment variables
-load_dotenv()
+
+import os
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
+
 API_KEY = os.getenv("AMADEUS_API_KEY")
 API_SECRET = os.getenv("AMADEUS_API_SECRET")
+
+
 
 amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
 openai.api_key = OPENAI_API_KEY
