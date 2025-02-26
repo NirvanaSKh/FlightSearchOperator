@@ -1,5 +1,6 @@
-streamlit
+--upgrade
 amadeus
+streamlit
 openai>=1.0.0
 pandas
 python-dotenv
