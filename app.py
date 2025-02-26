@@ -4,7 +4,7 @@ import pandas as pd
 from amadeus import Client, ResponseError
 import openai
 import os
-import json  # ✅ Use JSON for safer parsing
+import json
 
 # ✅ Read API keys from Streamlit Secrets or fallback to environment variables
 API_KEY = st.secrets.get("AMADEUS_API_KEY", os.getenv("AMADEUS_API_KEY"))
@@ -23,6 +23,27 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Chatbot")
 st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from New York to Singapore on March 10 for 1 adult')")
+
+# ✅ Function to Convert City Name to IATA Code
+def get_iata_code(city_name):
+    airport_codes = {
+        "New York": "JFK",
+        "London": "LHR",
+        "Singapore": "SIN",
+        "Dubai": "DXB",
+        "Los Angeles": "LAX",
+        "Paris": "CDG",
+        "Tokyo": "HND",
+        "Delhi": "DEL"
+    }
+    return airport_codes.get(city_name, city_name)  # Default to city_name if unknown
+
+# ✅ Function to Convert Date to `YYYY-MM-DD`
+def convert_to_iso_date(date_str):
+    try:
+        return datetime.datetime.strptime(date_str, "%B %d").strftime("%Y-%m-%d")
+    except ValueError:
+        return date_str  # Return original if conversion fails
 
 # ✅ User Input
 user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
@@ -43,15 +64,17 @@ if user_input:
     st.code(flight_info, language="json")  # ✅ Shows JSON output for debugging
 
     try:
-        # ✅ Parse AI response using `json.loads()` instead of `eval()`
+        # ✅ Parse AI response using `json.loads()`
         flight_details = json.loads(flight_info)
 
-        origin = flight_details.get("origin", "LHR")  # Default: London Heathrow
-        destination = flight_details.get("destination", "CDG")  # Default: Paris
-        departure_date = flight_details.get("departure_date", "2025-06-10")
-        return_date = flight_details.get("return_date", None)  # ✅ Converts `null` to `None`
+        # ✅ Convert Data for Amadeus API Compatibility
+        origin = get_iata_code(flight_details.get("origin", "LHR"))
+        destination = get_iata_code(flight_details.get("destination", "CDG"))
+        departure_date = convert_to_iso_date(flight_details.get("departure_date", "2025-06-10"))
+        return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else None
         adults = flight_details.get("adults", 1)
         children_ages = flight_details.get("children", [])
+        children_count = len(children_ages)
 
         # ✅ Call Flight Search Function
         def search_flights():
@@ -61,7 +84,7 @@ if user_input:
                     "destinationLocationCode": destination,
                     "departureDate": departure_date,
                     "adults": adults,
-                    "children": len(children_ages),
+                    "children": children_count,  # ✅ Fixes empty children list issue
                     "infants": sum(1 for age in children_ages if age < 2),
                     "currencyCode": "GBP",
                     "max": 10
@@ -87,7 +110,7 @@ if user_input:
                     duration = flight["itineraries"][0]["duration"]
                     stopovers = len(flight["itineraries"][0]["segments"]) - 1  # Stops count
 
-                    total_price = price * (adults + len(children_ages))
+                    total_price = price * (adults + children_count)
 
                     flight_results.append({
                         "Airline": airline,
