@@ -3,7 +3,6 @@ import datetime
 import pandas as pd
 from amadeus import Client, ResponseError
 import openai
-import streamlit as st
 import os
 
 # ✅ Read API keys from Streamlit Secrets or fallback to environment variables
@@ -11,39 +10,32 @@ API_KEY = st.secrets.get("AMADEUS_API_KEY", os.getenv("AMADEUS_API_KEY"))
 API_SECRET = st.secrets.get("AMADEUS_API_SECRET", os.getenv("AMADEUS_API_SECRET"))
 OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY", os.getenv("OPENAI_API_KEY"))
 
-# ✅ Debug: Print keys (DO NOT DO THIS IN PRODUCTION)
-st.write("🔍 Debugging: API Keys Loaded Successfully")
-st.write(f"AMADEUS_API_KEY: {'✔ Loaded' if API_KEY else '❌ Missing'}")
-st.write(f"AMADEUS_API_SECRET: {'✔ Loaded' if API_SECRET else '❌ Missing'}")
-st.write(f"OPENAI_API_KEY: {'✔ Loaded' if OPENAI_API_KEY else '❌ Missing'}")
-
 # ✅ Stop if keys are missing
 if not API_KEY or not API_SECRET or not OPENAI_API_KEY:
     st.error("🚨 API keys are missing! Please set them in Streamlit Secrets.")
     st.stop()
 
-
-
-# ✅ Step 1: Set Up API Credentials
-
+# ✅ Initialize API Clients
 amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
-openai.api_key = OPENAI_API_KEY
+client = openai.OpenAI(api_key=OPENAI_API_KEY)  # ✅ Corrected OpenAI API usage
 
-# ✅ Step 2: Streamlit UI
+# ✅ Streamlit UI
 st.title("✈️ Flight Search Chatbot")
 st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from London to Paris on June 10 for 2 adults and 2 children')")
 
-# ✅ Step 3: User Input
+# ✅ User Input
 user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
 
 if user_input:
     # ✅ Step 4: Extract Flight Details Using OpenAI GPT
-    response = openai.ChatCompletion.create(
+    response = client.chat.completions.create(
         model="gpt-4",
-        messages=[{"role": "system", "content": "Extract flight details from the user's input."},
-                  {"role": "user", "content": user_input}]
+        messages=[
+            {"role": "system", "content": "Extract flight details from the user's input."},
+            {"role": "user", "content": user_input}
+        ]
     )
-    flight_info = response["choices"][0]["message"]["content"]
+    flight_info = response.choices[0].message.content  # ✅ Corrected OpenAI API usage
 
     st.write("🔍 **AI Extracted Flight Details:**")
     st.write(flight_info)
