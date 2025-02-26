@@ -22,7 +22,7 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Chatbot")
-st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from New York to Singapore on March 10 for 1 adult and two 2-year-old children')")
+st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from New York to Singapore on March 10 for 2 adults and 1 child')")
 
 # ✅ Function to Convert City Name to IATA Code
 def get_iata_code(city_name):
@@ -41,7 +41,7 @@ def get_iata_code(city_name):
 # ✅ Function to Convert Date to `YYYY-MM-DD`
 def convert_to_iso_date(date_str):
     try:
-        return datetime.datetime.strptime(date_str, "%B %d").strftime("%Y-%m-%d")
+        return datetime.datetime.strptime(date_str + " 2025", "%B %d %Y").strftime("%Y-%m-%d")
     except ValueError:
         return date_str  # Return original if conversion fails
 
@@ -74,10 +74,10 @@ if user_input:
         return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else None
         adults = flight_details.get("adults", 1)
 
-        # ✅ Fix `null` issue in `children`
+        # ✅ Fix `children` issue
         children_ages = flight_details.get("children", [])
         children_ages = [age for age in children_ages if isinstance(age, (int, float))]  # Remove `null` values
-        children_count = len(children_ages)  # ✅ Convert to integer count
+        children_count = len(children_ages)  # ✅ Convert list to count
         infants_count = sum(1 for age in children_ages if age < 2)  # ✅ Count infants properly
 
         # ✅ Call Flight Search Function
@@ -88,7 +88,7 @@ if user_input:
                     "destinationLocationCode": destination,
                     "departureDate": departure_date,
                     "adults": adults,
-                    "children": children_count,  # ✅ Fixes empty children list issue
+                    "children": children_count,  # ✅ Send count, not a list
                     "infants": infants_count,  # ✅ Fixes infant count issue
                     "currencyCode": "GBP",
                     "max": 10
