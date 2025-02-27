@@ -109,9 +109,9 @@ if user_input:
         # ✅ Format Children’s Ages
         children_str = ", ".join([f"{age} years old" for age in children]) if children else "None"
 
-        # ✅ Display Extracted Flight Query in a Beautiful Table (Without Serial Numbers)
+        # ✅ Display Extracted Flight Query in a **Beautiful Table Without Index**
         st.markdown("### **🔍 Your Flight Search Query:**")
-        query_data = [
+        query_data = pd.DataFrame([
             ["✈️ From", origin_city],
             ["🏁 To", destination_city],
             ["📅 Departure", departure_date],
@@ -119,8 +119,9 @@ if user_input:
             ["👨‍👩‍👧 Adults", adults],
             ["👶 Children", children_str],
             ["🚀 Direct Flight", "Yes" if direct_flight_requested else "No"]
-        ]
-        st.table(pd.DataFrame(query_data, columns=["Field", "Details"]))
+        ], columns=["Field", "Details"])
+
+        st.table(query_data.style.hide(axis="index"))
 
         # ✅ Get IATA codes dynamically
         origin = get_iata_code(origin_city)
