@@ -78,33 +78,6 @@ def convert_to_iso_date(date_str):
 st.title("✈️ Flight Search Chatbot")
 st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults')")
 
-# ✅ Apply Custom CSS for Adaptive Query Table
-st.markdown("""
-    <style>
-        .custom-table-container {
-            width: 100%;
-            max-width: 100%;
-            overflow-x: auto;
-            display: block;
-        }
-        .custom-table {
-            width: 100%;
-            border-collapse: collapse;
-            text-align: left;
-            font-size: 18px;
-        }
-        .custom-table th, .custom-table td {
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
-        }
-        .custom-table th {
-            background-color: #004080;
-            color: white;
-            text-align: left;
-        }
-    </style>
-""", unsafe_allow_html=True)
-
 # ✅ User Input
 user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
 
@@ -133,29 +106,18 @@ if user_input:
         children = flight_details.get("children", [])
         direct_flight_requested = flight_details.get("direct_flight", False)
 
-        # ✅ Format Children’s Ages
-        children_str = ", ".join([f"{age} years old" for age in children]) if children else "None"
+        # ✅ Get IATA codes dynamically
+        origin = get_iata_code(origin_city)
+        destination = get_iata_code(destination_city)
 
-        # ✅ **Display Extracted Flight Query in Adaptive Table**
-        st.markdown(f"""
-        <div class="custom-table-container">
-        <table class="custom-table">
-            <tr><th>Field</th><th>Details</th></tr>
-            <tr><td>✈️ From</td><td>{origin_city}</td></tr>
-            <tr><td>🏁 To</td><td>{destination_city}</td></tr>
-            <tr><td>📅 Departure</td><td>{departure_date}</td></tr>
-            <tr><td>🔄 Return</td><td>{return_date}</td></tr>
-            <tr><td>👨‍👩‍👧 Adults</td><td>{adults}</td></tr>
-            <tr><td>👶 Children</td><td>{children_str}</td></tr>
-            <tr><td>🚀 Direct Flight</td><td>{"Yes" if direct_flight_requested else "No"}</td></tr>
-        </table>
-        </div>
-        """, unsafe_allow_html=True)
+        if not origin or not destination:
+            st.error(f"❌ Could not determine airport codes for '{origin_city}' or '{destination_city}'. Please check your input.")
+            st.stop()
 
         # ✅ Search for Flights
         response = amadeus.shopping.flight_offers_search.get(
-            originLocationCode=get_iata_code(origin_city),
-            destinationLocationCode=get_iata_code(destination_city),
+            originLocationCode=origin,
+            destinationLocationCode=destination,
             departureDate=departure_date,
             adults=adults,
             currencyCode="GBP",
@@ -168,14 +130,34 @@ if user_input:
         else:
             flight_results = []
             for flight in flights:
-                price = float(flight.get("price", {}).get("total", "0.00"))
+                price_per_adult = float(flight.get("price", {}).get("total", "0.00"))
+                infant_price = price_per_adult * 0.5 if any(age < 2 for age in children) else 0  # Discounted infant price
+                total_price = (adults * price_per_adult) + (infant_price * sum(1 for age in children if age < 2))
+
                 airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
+                itineraries = flight["itineraries"][0]
+                stops_count = len(itineraries["segments"]) - 1
+                total_duration = itineraries["duration"]
+
+                stop_details = []
+                for segment in itineraries["segments"][:-1]:  # Exclude final arrival segment
+                    stop_airport = segment["arrival"]["iataCode"]
+                    stop_duration = segment.get("stopDuration", "N/A")
+                    stop_details.append(f"{stop_airport} ({stop_duration})")
+
+                stop_details_str = ", ".join(stop_details) if stop_details else "Direct"
+
                 flight_results.append({
                     "Airline": airline,
                     "From": origin_city,
                     "To": destination_city,
                     "Departure": departure_date,
-                    "Price (GBP)": f"£{price:.2f}"
+                    "Stops": stops_count,
+                    "Stop Details": stop_details_str,
+                    "Total Duration": total_duration,
+                    "Price per Adult (GBP)": f"£{price_per_adult:.2f}",
+                    "Price per Infant (GBP)": f"£{infant_price:.2f}" if infant_price > 0 else "N/A",
+                    "Total Price (GBP)": f"£{total_price:.2f}"
                 })
 
             df = pd.DataFrame(flight_results)
