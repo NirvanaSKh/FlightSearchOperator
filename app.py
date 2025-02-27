@@ -72,20 +72,6 @@ def convert_to_iso_date(date_str):
         except:
             return date_str  # If parsing fails, return original text
 
-    if "next" in date_str.lower():
-        weekdays = {
-            "monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3,
-            "friday": 4, "saturday": 5, "sunday": 6
-        }
-        for day in weekdays:
-            if day in date_str.lower():
-                today_weekday = today.weekday()
-                target_weekday = weekdays[day]
-                days_until_next = (target_weekday - today_weekday + 7) % 7
-                if days_until_next == 0:
-                    days_until_next += 7  # If today is already the target day, move to next week
-                return (today + datetime.timedelta(days=days_until_next)).strftime("%Y-%m-%d")
-
     try:
         return datetime.datetime.strptime(date_str + f" {today.year}", "%B %d %Y").strftime("%Y-%m-%d")
     except ValueError:
@@ -99,9 +85,9 @@ st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight f
 user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
 
 if user_input:
-    # ✅ Step 4: Extract Flight Details Using OpenAI GPT
+    # ✅ Step 4: Extract Flight Details Using OpenAI GPT-3.5 Turbo (Free Model)
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
+        model="gpt-3.5-turbo",  # ✅ Free Model Used
         messages=[
             {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages). Ensure children list contains only numbers and is empty if there are no children."},
             {"role": "user", "content": user_input}
@@ -133,6 +119,7 @@ if user_input:
         return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else None
         adults = flight_details.get("adults", 1)
         children = flight_details.get("children", [])
+        infants = sum(1 for age in children if age < 2)
         total_passengers = adults + len(children)
 
         # ✅ Search for Flights
@@ -162,28 +149,36 @@ if user_input:
                 for flight in flights:
                     price_per_person = float(flight.get("price", {}).get("total", "0.00"))
                     total_price = price_per_person * total_passengers
+                    infant_price = price_per_person * 0.5 if infants else 0  # Assuming infants pay 50% of adult fare
                     airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
                     segments = flight.get("itineraries", [])[0].get("segments", [])
 
                     if not segments:
                         continue
 
+                    stop_count = len(segments) - 1
+                    stop_details = []
+                    for i in range(stop_count):
+                        stop_airport = segments[i].get("arrival", {}).get("iataCode", "N/A")
+                        stop_time = segments[i].get("arrival", {}).get("at", "N/A")
+                        stop_duration = segments[i + 1].get("departure", {}).get("at", "N/A")
+                        stop_details.append(f"{stop_airport} ({stop_time} - {stop_duration})")
+
                     departure_airport = segments[0].get("departure", {}).get("iataCode", "N/A")
                     departure_time = segments[0].get("departure", {}).get("at", "N/A")
                     arrival_airport = segments[-1].get("arrival", {}).get("iataCode", "N/A")
                     arrival_time = segments[-1].get("arrival", {}).get("at", "N/A")
-                    duration = flight.get("itineraries", [])[0].get("duration", "N/A")
-                    stopovers = len(segments) - 1
 
                     flight_results.append({
                         "Airline": airline,
                         "From": departure_airport,
-                        "Departure Time": departure_time,
                         "To": arrival_airport,
+                        "Departure Time": departure_time,
                         "Arrival Time": arrival_time,
-                        "Duration": duration,
-                        "Stops": stopovers,
-                        "Price per Person (GBP)": f"£{price_per_person:.2f}",
+                        "Stops": stop_count,
+                        "Stop Details": ", ".join(stop_details),
+                        "Price per Adult (GBP)": f"£{price_per_person:.2f}",
+                        "Price per Infant (GBP)": f"£{infant_price:.2f}" if infants else "N/A",
                         "Total Price (GBP)": f"£{total_price:.2f}"
                     })
 
@@ -197,4 +192,4 @@ if user_input:
         search_flights()
 
     except json.JSONDecodeError as e:
-        st.error(f"🚨 Error: AI response is not valid JSON. OpenAI output may have formatting issues. {e}")
+        st.error(f"🚨 Error: AI response is not valid JSON. {e}")
