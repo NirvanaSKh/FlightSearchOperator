@@ -115,9 +115,12 @@ if user_input:
         departure_date = convert_to_iso_date(flight_details.get("departure_date", "2025-06-10"))
         return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else None
         adults = flight_details.get("adults", 1)
+        
+        # ✅ Fix Children Age Handling
         children = flight_details.get("children", [])
-        infants = sum(1 for age in children if age < 2)
-        total_passengers = adults + len(children)
+        children_cleaned = [int(age) for age in children if isinstance(age, (int, float)) and age >= 0]
+        infants = sum(1 for age in children_cleaned if age < 2)
+        total_passengers = adults + len(children_cleaned)
 
         # ✅ Search for Flights
         def search_flights():
@@ -152,32 +155,13 @@ if user_input:
                     total_price = price_per_person * total_passengers
                     infant_price = price_per_person * 0.5 if infants else 0  
                     airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
-                    segments = flight.get("itineraries", [])[0].get("segments", [])
-
-                    if not segments:
-                        continue
-
-                    stop_count = len(segments) - 1
-                    stop_details = []
-                    for i in range(stop_count):
-                        stop_airport = segments[i].get("arrival", {}).get("iataCode", "N/A")
-                        stop_time = segments[i].get("arrival", {}).get("at", "N/A")
-                        stop_duration = segments[i + 1].get("departure", {}).get("at", "N/A")
-                        stop_details.append(f"{stop_airport} ({stop_time} - {stop_duration})")
-
-                    departure_airport = segments[0].get("departure", {}).get("iataCode", "N/A")
-                    departure_time = segments[0].get("departure", {}).get("at", "N/A")
-                    arrival_airport = segments[-1].get("arrival", {}).get("iataCode", "N/A")
-                    arrival_time = segments[-1].get("arrival", {}).get("at", "N/A")
 
                     flight_results.append({
                         "Airline": airline,
-                        "From": departure_airport,
-                        "To": arrival_airport,
-                        "Departure Time": departure_time,
-                        "Arrival Time": arrival_time,
-                        "Stops": stop_count,
-                        "Stop Details": ", ".join(stop_details) if stop_details else "Direct Flight",
+                        "From": origin,
+                        "To": destination,
+                        "Departure Date": departure_date,
+                        "Stops": "Direct" if direct_flight_requested else "May have stops",
                         "Price per Adult (GBP)": f"£{price_per_person:.2f}",
                         "Price per Infant (GBP)": f"£{infant_price:.2f}" if infants else "N/A",
                         "Total Price (GBP)": f"£{total_price:.2f}"
