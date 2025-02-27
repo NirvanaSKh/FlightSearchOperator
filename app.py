@@ -78,7 +78,7 @@ def convert_to_iso_date(date_str):
 st.title("✈️ Flight Search Chatbot")
 st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults')")
 
-# ✅ Apply Custom CSS for Adaptive Width Table
+# ✅ Apply Custom CSS for Adaptive Query Table
 st.markdown("""
     <style>
         .custom-table-container {
@@ -136,7 +136,7 @@ if user_input:
         # ✅ Format Children’s Ages
         children_str = ", ".join([f"{age} years old" for age in children]) if children else "None"
 
-        # ✅ **Display Extracted Flight Query with Adaptive Width**
+        # ✅ **Display Extracted Flight Query in Adaptive Table**
         st.markdown(f"""
         <div class="custom-table-container">
         <table class="custom-table">
@@ -152,46 +152,35 @@ if user_input:
         </div>
         """, unsafe_allow_html=True)
 
-        # ✅ Keep "Flight Results" Table Unchanged
-        origin = get_iata_code(origin_city)
-        destination = get_iata_code(destination_city)
+        # ✅ Search for Flights
+        response = amadeus.shopping.flight_offers_search.get(
+            originLocationCode=get_iata_code(origin_city),
+            destinationLocationCode=get_iata_code(destination_city),
+            departureDate=departure_date,
+            adults=adults,
+            currencyCode="GBP",
+            max=10
+        )
+        flights = response.data
 
-        if not origin or not destination:
-            st.error(f"❌ Could not determine airport codes for '{origin_city}' or '{destination_city}'. Please check your input.")
-            st.stop()
+        if not flights:
+            st.error("❌ No flights found. Try different dates or locations.")
+        else:
+            flight_results = []
+            for flight in flights:
+                price = float(flight.get("price", {}).get("total", "0.00"))
+                airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
+                flight_results.append({
+                    "Airline": airline,
+                    "From": origin_city,
+                    "To": destination_city,
+                    "Departure": departure_date,
+                    "Price (GBP)": f"£{price:.2f}"
+                })
 
-        def search_flights():
-            try:
-                params = {
-                    "originLocationCode": origin,
-                    "destinationLocationCode": destination,
-                    "departureDate": departure_date,
-                    "adults": adults,
-                    "currencyCode": "GBP",
-                    "max": 10
-                }
-
-                if return_date != "One-way":
-                    params["returnDate"] = return_date
-
-                if direct_flight_requested:
-                    params["nonStop"] = "true"
-
-                response = amadeus.shopping.flight_offers_search.get(**params)
-                flights = response.data
-
-                if not flights:
-                    st.error("❌ No flights found. Try different dates or locations.")
-                    return
-
-                df = pd.DataFrame(flights)
-                st.write("🛫 **Flight Results:**")
-                st.dataframe(df)
-
-            except ResponseError as error:
-                st.error(f"❌ API Error: {error}")
-
-        search_flights()
+            df = pd.DataFrame(flight_results)
+            st.write("🛫 **Flight Results:**")
+            st.dataframe(df)
 
     except json.JSONDecodeError as e:
         st.error(f"🚨 Error: AI response is not valid JSON. {e}")
