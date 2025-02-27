@@ -132,6 +132,8 @@ if user_input:
         departure_date = convert_to_iso_date(flight_details.get("departure_date", "2025-06-10"))
         return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else None
         adults = flight_details.get("adults", 1)
+        children = flight_details.get("children", [])
+        total_passengers = adults + len(children)
 
         # ✅ Search for Flights
         def search_flights():
@@ -158,7 +160,8 @@ if user_input:
                 # ✅ Extract and Format Flight Data
                 flight_results = []
                 for flight in flights:
-                    price = flight.get("price", {}).get("total", "N/A")
+                    price_per_person = float(flight.get("price", {}).get("total", "0.00"))
+                    total_price = price_per_person * total_passengers
                     airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
                     segments = flight.get("itineraries", [])[0].get("segments", [])
 
@@ -180,7 +183,8 @@ if user_input:
                         "Arrival Time": arrival_time,
                         "Duration": duration,
                         "Stops": stopovers,
-                        "Price (GBP)": f"£{price}"
+                        "Price per Person (GBP)": f"£{price_per_person:.2f}",
+                        "Total Price (GBP)": f"£{total_price:.2f}"
                     })
 
                 df = pd.DataFrame(flight_results)
