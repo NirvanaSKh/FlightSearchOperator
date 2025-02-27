@@ -78,6 +78,27 @@ def convert_to_iso_date(date_str):
 st.title("✈️ Flight Search Chatbot")
 st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults')")
 
+# ✅ Apply Custom CSS for Full-Width Table
+st.markdown("""
+    <style>
+        .custom-table {
+            width: 100%;
+            display: block;
+            text-align: left;
+            font-size: 18px;
+        }
+        .custom-table th, .custom-table td {
+            padding: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+        .custom-table th {
+            background-color: #004080;
+            color: white;
+            text-align: left;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
 # ✅ User Input
 user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
 
@@ -109,19 +130,19 @@ if user_input:
         # ✅ Format Children’s Ages
         children_str = ", ".join([f"{age} years old" for age in children]) if children else "None"
 
-        # ✅ **Display Extracted Flight Query Using Markdown Table (No Index)**
-        st.markdown("""
-        ### **🔍 Your Flight Search Query:**
-        | **Field**          | **Details**             |
-        |-------------------|-----------------------|
-        | ✈️ **From**       | {0}                  |
-        | 🏁 **To**         | {1}                  |
-        | 📅 **Departure**  | {2}                  |
-        | 🔄 **Return**     | {3}                  |
-        | 👨‍👩‍👧 **Adults**   | {4}                  |
-        | 👶 **Children**   | {5}                  |
-        | 🚀 **Direct Flight** | {6}                  |
-        """.format(origin_city, destination_city, departure_date, return_date, adults, children_str, "Yes" if direct_flight_requested else "No"))
+        # ✅ **Display Extracted Flight Query Using Custom CSS for Full-Width**
+        st.markdown(f"""
+        <table class="custom-table">
+            <tr><th>Field</th><th>Details</th></tr>
+            <tr><td>✈️ From</td><td>{origin_city}</td></tr>
+            <tr><td>🏁 To</td><td>{destination_city}</td></tr>
+            <tr><td>📅 Departure</td><td>{departure_date}</td></tr>
+            <tr><td>🔄 Return</td><td>{return_date}</td></tr>
+            <tr><td>👨‍👩‍👧 Adults</td><td>{adults}</td></tr>
+            <tr><td>👶 Children</td><td>{children_str}</td></tr>
+            <tr><td>🚀 Direct Flight</td><td>{"Yes" if direct_flight_requested else "No"}</td></tr>
+        </table>
+        """, unsafe_allow_html=True)
 
         # ✅ Get IATA codes dynamically
         origin = get_iata_code(origin_city)
@@ -156,24 +177,7 @@ if user_input:
                     st.error("❌ No flights found. Try different dates or locations.")
                     return
 
-                # ✅ Extract and Format Flight Data
-                flight_results = []
-                for flight in flights:
-                    price_per_person = float(flight.get("price", {}).get("total", "0.00"))
-                    total_price = price_per_person * (adults + len(children))
-                    airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
-
-                    flight_results.append({
-                        "Airline": airline,
-                        "From": origin,
-                        "To": destination,
-                        "Departure Date": departure_date,
-                        "Stops": "Direct" if direct_flight_requested else "May have stops",
-                        "Price per Adult (GBP)": f"£{price_per_person:.2f}",
-                        "Total Price (GBP)": f"£{total_price:.2f}"
-                    })
-
-                df = pd.DataFrame(flight_results)
+                df = pd.DataFrame(flights)
                 st.write("🛫 **Flight Results:**")
                 st.dataframe(df)
 
