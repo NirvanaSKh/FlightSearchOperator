@@ -23,7 +23,7 @@ if not API_KEY or not API_SECRET or not OPENAI_API_KEY:
 amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-# ✅ Cache for storing known IATA codes (to reduce API calls)
+# ✅ Function to Extract IATA Code (Cache First)
 iata_cache = {
     "London": "LON",
     "Delhi": "DEL",
@@ -37,12 +37,9 @@ iata_cache = {
     "Berlin": "BER"
 }
 
-# ✅ Function to Get IATA Code (Uses Cache First)
 def get_iata_code(city_name):
-    """Retrieve IATA airport code using cache, otherwise fetch from Amadeus API."""
     if city_name in iata_cache:
         return iata_cache[city_name]
-
     try:
         response = amadeus.reference_data.locations.get(
             keyword=city_name,
@@ -50,10 +47,10 @@ def get_iata_code(city_name):
         )
         if response.data:
             iata_code = response.data[0]["iataCode"]
-            iata_cache[city_name] = iata_code  # Cache the new IATA code
+            iata_cache[city_name] = iata_code
             return iata_code
         else:
-            return None  # No matching IATA code found
+            return None
     except ResponseError as error:
         st.error(f"❌ Error fetching IATA code for {city_name}: {error}")
         return None
@@ -70,16 +67,16 @@ def convert_to_iso_date(date_str):
             days = int(date_str.split("in ")[1].split(" days")[0])
             return (today + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
         except:
-            return date_str  # If parsing fails, return original text
+            return date_str  
 
     try:
         return datetime.datetime.strptime(date_str + f" {today.year}", "%B %d %Y").strftime("%Y-%m-%d")
     except ValueError:
-        return date_str  # Return original if conversion fails
+        return date_str  
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Chatbot")
-st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a flight from Berlin to Mumbai on May 5 for 2 adults')")
+st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults')")
 
 # ✅ User Input
 user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
@@ -87,27 +84,27 @@ user_input = st.text_input("You:", placeholder="Type your flight request here an
 if user_input:
     # ✅ Step 4: Extract Flight Details Using OpenAI GPT-3.5 Turbo (Free Model)
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",  # ✅ Free Model Used
+        model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages). Ensure children list contains only numbers and is empty if there are no children."},
+            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages), direct_flight (true/false). Ensure children list contains only numbers and is empty if there are no children."},
             {"role": "user", "content": user_input}
         ]
     )
 
-    flight_info = response.choices[0].message.content  # ✅ Corrected OpenAI API usage
+    flight_info = response.choices[0].message.content 
 
     st.write("🔍 **AI Extracted Flight Details:**")
-    st.code(flight_info, language="json")  # ✅ Shows JSON output for debugging
+    st.code(flight_info, language="json")  
 
     try:
-        # ✅ Parse AI response using `json.loads()`
         flight_details = json.loads(flight_info)
 
-        # ✅ Convert Data for Amadeus API Compatibility
+        # ✅ Extract Key Details
         origin_city = flight_details.get("origin", "")
         destination_city = flight_details.get("destination", "")
+        direct_flight_requested = flight_details.get("direct_flight", False)
 
-        # ✅ Get IATA codes dynamically (cached to reduce API calls)
+        # ✅ Get IATA codes dynamically
         origin = get_iata_code(origin_city)
         destination = get_iata_code(destination_city)
 
@@ -136,6 +133,10 @@ if user_input:
 
                 if return_date:
                     params["returnDate"] = return_date
+                
+                # ✅ If user requested direct flights, set the filter
+                if direct_flight_requested:
+                    params["nonStop"] = "true"
 
                 response = amadeus.shopping.flight_offers_search.get(**params)
                 flights = response.data
@@ -149,7 +150,7 @@ if user_input:
                 for flight in flights:
                     price_per_person = float(flight.get("price", {}).get("total", "0.00"))
                     total_price = price_per_person * total_passengers
-                    infant_price = price_per_person * 0.5 if infants else 0  # Assuming infants pay 50% of adult fare
+                    infant_price = price_per_person * 0.5 if infants else 0  
                     airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
                     segments = flight.get("itineraries", [])[0].get("segments", [])
 
@@ -176,7 +177,7 @@ if user_input:
                         "Departure Time": departure_time,
                         "Arrival Time": arrival_time,
                         "Stops": stop_count,
-                        "Stop Details": ", ".join(stop_details),
+                        "Stop Details": ", ".join(stop_details) if stop_details else "Direct Flight",
                         "Price per Adult (GBP)": f"£{price_per_person:.2f}",
                         "Price per Infant (GBP)": f"£{infant_price:.2f}" if infants else "N/A",
                         "Total Price (GBP)": f"£{total_price:.2f}"
