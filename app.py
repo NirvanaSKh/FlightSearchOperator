@@ -133,12 +133,6 @@ if user_input:
         return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else None
         adults = flight_details.get("adults", 1)
 
-        # ✅ Fix `children` issue
-        children_ages = flight_details.get("children", [])
-        children_ages = [age for age in children_ages if isinstance(age, (int, float))]  # Remove `null` values
-        children_count = len(children_ages)  # ✅ Convert list to count
-        infants_count = sum(1 for age in children_ages if age < 2)  # ✅ Count infants properly
-
         # ✅ Search for Flights
         def search_flights():
             try:
@@ -147,8 +141,6 @@ if user_input:
                     "destinationLocationCode": destination,
                     "departureDate": departure_date,
                     "adults": adults,
-                    "children": children_count,
-                    "infants": infants_count,
                     "currencyCode": "GBP",
                     "max": 10
                 }
@@ -163,8 +155,35 @@ if user_input:
                     st.error("❌ No flights found. Try different dates or locations.")
                     return
 
-                df = pd.DataFrame(flights)
+                # ✅ Extract and Format Flight Data
+                flight_results = []
+                for flight in flights:
+                    price = flight.get("price", {}).get("total", "N/A")
+                    airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
+                    segments = flight.get("itineraries", [])[0].get("segments", [])
 
+                    if not segments:
+                        continue
+
+                    departure_airport = segments[0].get("departure", {}).get("iataCode", "N/A")
+                    departure_time = segments[0].get("departure", {}).get("at", "N/A")
+                    arrival_airport = segments[-1].get("arrival", {}).get("iataCode", "N/A")
+                    arrival_time = segments[-1].get("arrival", {}).get("at", "N/A")
+                    duration = flight.get("itineraries", [])[0].get("duration", "N/A")
+                    stopovers = len(segments) - 1
+
+                    flight_results.append({
+                        "Airline": airline,
+                        "From": departure_airport,
+                        "Departure Time": departure_time,
+                        "To": arrival_airport,
+                        "Arrival Time": arrival_time,
+                        "Duration": duration,
+                        "Stops": stopovers,
+                        "Price (GBP)": f"£{price}"
+                    })
+
+                df = pd.DataFrame(flight_results)
                 st.write("🛫 **Flight Results:**")
                 st.dataframe(df)
 
