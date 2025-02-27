@@ -101,7 +101,7 @@ user_input = st.text_input("You:", placeholder="Type your flight request here an
 if user_input:
     # ✅ Step 4: Extract Flight Details Using OpenAI GPT
     response = client.chat.completions.create(
-        model="gpt-4",
+        model="gpt-3.5-turbo",
         messages=[
             {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages). Ensure children list contains only numbers and is empty if there are no children."},
             {"role": "user", "content": user_input}
