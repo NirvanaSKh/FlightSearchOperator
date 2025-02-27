@@ -93,16 +93,30 @@ if user_input:
 
     flight_info = response.choices[0].message.content 
 
-    st.write("🔍 **AI Extracted Flight Details:**")
-    st.code(flight_info, language="json")  
-
+    # ✅ Parse the AI response into a JSON dictionary
     try:
         flight_details = json.loads(flight_info)
 
-        # ✅ Extract Key Details
+        # ✅ Convert Key Details for Display
         origin_city = flight_details.get("origin", "")
         destination_city = flight_details.get("destination", "")
+        departure_date = convert_to_iso_date(flight_details.get("departure_date", "2025-06-10"))
+        return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else "One-way"
+        adults = flight_details.get("adults", 1)
+        children = flight_details.get("children", [])
         direct_flight_requested = flight_details.get("direct_flight", False)
+
+        # ✅ Format Children’s Ages
+        children_str = ", ".join([f"{age} years old" for age in children]) if children else "None"
+
+        # ✅ Display Extracted Flight Query in a Beautiful Table
+        st.markdown("### **🔍 Your Flight Search Query:**")
+        query_data = {
+            "Field": ["✈️ From", "🏁 To", "📅 Departure", "🔄 Return", "👨‍👩‍👧 Adults", "👶 Children", "🚀 Direct Flight"],
+            "Details": [origin_city, destination_city, departure_date, return_date, adults, children_str, "Yes" if direct_flight_requested else "No"]
+        }
+        query_df = pd.DataFrame(query_data)
+        st.table(query_df)
 
         # ✅ Get IATA codes dynamically
         origin = get_iata_code(origin_city)
@@ -111,16 +125,6 @@ if user_input:
         if not origin or not destination:
             st.error(f"❌ Could not determine airport codes for '{origin_city}' or '{destination_city}'. Please check your input.")
             st.stop()
-
-        departure_date = convert_to_iso_date(flight_details.get("departure_date", "2025-06-10"))
-        return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else None
-        adults = flight_details.get("adults", 1)
-        
-        # ✅ Fix Children Age Handling
-        children = flight_details.get("children", [])
-        children_cleaned = [int(age) for age in children if isinstance(age, (int, float)) and age >= 0]
-        infants = sum(1 for age in children_cleaned if age < 2)
-        total_passengers = adults + len(children_cleaned)
 
         # ✅ Search for Flights
         def search_flights():
@@ -134,10 +138,9 @@ if user_input:
                     "max": 10
                 }
 
-                if return_date:
+                if return_date != "One-way":
                     params["returnDate"] = return_date
-                
-                # ✅ If user requested direct flights, set the filter
+
                 if direct_flight_requested:
                     params["nonStop"] = "true"
 
@@ -152,8 +155,7 @@ if user_input:
                 flight_results = []
                 for flight in flights:
                     price_per_person = float(flight.get("price", {}).get("total", "0.00"))
-                    total_price = price_per_person * total_passengers
-                    infant_price = price_per_person * 0.5 if infants else 0  
+                    total_price = price_per_person * (adults + len(children))
                     airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
 
                     flight_results.append({
@@ -163,7 +165,6 @@ if user_input:
                         "Departure Date": departure_date,
                         "Stops": "Direct" if direct_flight_requested else "May have stops",
                         "Price per Adult (GBP)": f"£{price_per_person:.2f}",
-                        "Price per Infant (GBP)": f"£{infant_price:.2f}" if infants else "N/A",
                         "Total Price (GBP)": f"£{total_price:.2f}"
                     })
 
