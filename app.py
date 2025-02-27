@@ -140,7 +140,7 @@ if user_input:
         infants_count = sum(1 for age in children_ages if age < 2)  # ✅ Count infants properly
 
         # ✅ Search for Flights
-        def search_flights():
+ def search_flights():
     try:
         params = {
             "originLocationCode": origin,
@@ -210,6 +210,7 @@ if user_input:
 
     except ResponseError as error:
         st.error(f"❌ API Error: {error}")
+
 
 
         search_flights()
