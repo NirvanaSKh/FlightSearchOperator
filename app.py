@@ -140,78 +140,36 @@ if user_input:
         infants_count = sum(1 for age in children_ages if age < 2)  # ✅ Count infants properly
 
         # ✅ Search for Flights
- def search_flights():
-    try:
-        params = {
-            "originLocationCode": origin,
-            "destinationLocationCode": destination,
-            "departureDate": departure_date,
-            "adults": adults,
-            "children": children_count,
-            "infants": infants_count,
-            "currencyCode": "GBP",
-            "max": 10
-        }
+        def search_flights():
+            try:
+                params = {
+                    "originLocationCode": origin,
+                    "destinationLocationCode": destination,
+                    "departureDate": departure_date,
+                    "adults": adults,
+                    "children": children_count,
+                    "infants": infants_count,
+                    "currencyCode": "GBP",
+                    "max": 10
+                }
 
-        if return_date:
-            params["returnDate"] = return_date
+                if return_date:
+                    params["returnDate"] = return_date
 
-        response = amadeus.shopping.flight_offers_search.get(**params)
-        flights = response.data
+                response = amadeus.shopping.flight_offers_search.get(**params)
+                flights = response.data
 
-        if not flights:
-            st.error("❌ No flights found. Try different dates or locations.")
-            return
+                if not flights:
+                    st.error("❌ No flights found. Try different dates or locations.")
+                    return
 
-        # ✅ Extract Flight Details Properly
-        flight_results = []
-        for flight in flights:
-            price_info = flight.get("price", {})
-            price = price_info.get("total", "N/A")
-            currency = price_info.get("currency", "GBP")
-            airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
+                df = pd.DataFrame(flights)
 
-            itineraries = flight.get("itineraries", [])
-            if not itineraries:
-                continue  # Skip flights without itineraries
+                st.write("🛫 **Flight Results:**")
+                st.dataframe(df)
 
-            # ✅ Extract Itinerary Data
-            segments = itineraries[0].get("segments", [])
-            if not segments:
-                continue  # Skip if no segments
-
-            departure = segments[0].get("departure", {}).get("at", "N/A")
-            arrival = segments[-1].get("arrival", {}).get("at", "N/A")
-            duration = itineraries[0].get("duration", "N/A")
-            stopovers = len(segments) - 1  # Number of stops
-
-            # ✅ Total Price Calculation
-            total_price = float(price) * (adults + children_count) if price != "N/A" else "N/A"
-
-            flight_results.append({
-                "Airline": airline,
-                "Departure": departure,
-                "Arrival": arrival,
-                "Duration": duration,
-                "Stops": stopovers,
-                "Price per Person (GBP)": f"£{price}" if price != "N/A" else "N/A",
-                "Total Price (GBP)": f"£{total_price:.2f}" if price != "N/A" else "N/A"
-            })
-
-        # ✅ Convert to DataFrame and Sort by Price
-        df = pd.DataFrame(flight_results)
-
-        if not df.empty and "Total Price (GBP)" in df.columns:
-            df = df.sort_values(by=["Total Price (GBP)"], ascending=True)
-
-        # ✅ Display Results in Streamlit
-        st.write("🛫 **Flight Results (Sorted by Price)**:")
-        st.dataframe(df)
-
-    except ResponseError as error:
-        st.error(f"❌ API Error: {error}")
-
-
+            except ResponseError as error:
+                st.error(f"❌ API Error: {error}")
 
         search_flights()
 
