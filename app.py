@@ -133,8 +133,10 @@ if user_input:
         children = flight_details.get("children", [])
         direct_flight_requested = flight_details.get("direct_flight", False)
 
-        # ✅ Display Flight Search Query in Adaptive Table
+        # ✅ Format Children’s Ages
         children_str = ", ".join([f"{age} years old" for age in children]) if children else "None"
+
+        # ✅ **Display Extracted Flight Query in Adaptive Table**
         st.markdown(f"""
         <div class="custom-table-container">
         <table class="custom-table">
@@ -164,7 +166,39 @@ if user_input:
         if not flights:
             st.error("❌ No flights found. Try different dates or locations.")
         else:
-            df = pd.DataFrame(flights)
+            flight_results = []
+            for flight in flights:
+                price_per_adult = float(flight.get("price", {}).get("total", "0.00"))
+                infant_price = price_per_adult * 0.5 if any(age < 2 for age in children) else 0  # Discounted infant price
+                total_price = (adults * price_per_adult) + (infant_price * sum(1 for age in children if age < 2))
+
+                airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
+                itineraries = flight["itineraries"][0]
+                stops_count = len(itineraries["segments"]) - 1
+                total_duration = itineraries["duration"]
+
+                stop_details = []
+                for segment in itineraries["segments"][:-1]:  # Exclude final arrival segment
+                    stop_airport = segment["arrival"]["iataCode"]
+                    stop_duration = segment.get("stopDuration", "N/A")
+                    stop_details.append(f"{stop_airport} ({stop_duration})")
+
+                stop_details_str = ", ".join(stop_details) if stop_details else "Direct"
+
+                flight_results.append({
+                    "Airline": airline,
+                    "From": origin_city,
+                    "To": destination_city,
+                    "Departure": departure_date,
+                    "Stops": stops_count,
+                    "Stop Details": stop_details_str,
+                    "Total Duration": total_duration,
+                    "Price per Adult (GBP)": f"£{price_per_adult:.2f}",
+                    "Price per Infant (GBP)": f"£{infant_price:.2f}" if infant_price > 0 else "N/A",
+                    "Total Price (GBP)": f"£{total_price:.2f}"
+                })
+
+            df = pd.DataFrame(flight_results)
             st.write("🛫 **Flight Results:**")
             st.dataframe(df)
 
