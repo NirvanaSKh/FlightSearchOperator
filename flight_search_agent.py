@@ -5,6 +5,7 @@ import pandas as pd
 from amadeus import Client, ResponseError
 import openai
 import json
+import re
 
 # ✅ Force reinstall `amadeus` to prevent import issues
 os.system("pip install --upgrade --force-reinstall amadeus")
@@ -39,9 +40,9 @@ def get_iata_code(city_name):
         return None
     return None
 
-# ✅ Function to Convert Contextual Dates to `YYYY-MM-DD`
+# ✅ Function to Convert Contextual & Natural Language Dates to `YYYY-MM-DD`
 def convert_to_iso_date(date_str):
-    """Convert contextual dates like 'tomorrow' or 'in 3 days' to YYYY-MM-DD"""
+    """Convert contextual dates like 'tomorrow', 'in 3 days', or '5th May' to YYYY-MM-DD"""
     today = datetime.date.today()
 
     if not date_str or not isinstance(date_str, str) or date_str.strip() == "":
@@ -54,15 +55,21 @@ def convert_to_iso_date(date_str):
 
     if "in " in date_str and " days" in date_str:
         try:
-            days = int(date_str.split("in ")[1].split(" days")[0])
+            days = int(re.search(r"in (\d+) days", date_str).group(1))
             return (today + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
-        except ValueError:
+        except (ValueError, AttributeError):
             return None  
 
+    # ✅ Handle ordinal numbers like "5th May", "1st June"
+    date_str = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", date_str)
+
     try:
-        return datetime.datetime.strptime(date_str + f" {today.year}", "%B %d %Y").strftime("%Y-%m-%d")
+        return datetime.datetime.strptime(date_str + f" {today.year}", "%d %B %Y").strftime("%Y-%m-%d")
     except ValueError:
-        return None  # Will trigger clarification
+        try:
+            return datetime.datetime.strptime(date_str + f" {today.year}", "%B %d %Y").strftime("%Y-%m-%d")
+        except ValueError:
+            return None  # Will trigger clarification
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Agent")
@@ -130,44 +137,6 @@ if user_input:
         - 👶 Children: {", ".join([f"{age} years old" for age in children]) if children else "None"}
         - 🚀 Direct Flight: {"Yes" if direct_flight_requested else "No"}
         """)
-
-        # ✅ Search for Flights
-        try:
-            response = amadeus.shopping.flight_offers_search.get(
-                originLocationCode=origin_code,
-                destinationLocationCode=destination_code,
-                departureDate=departure_date,
-                adults=adults,
-                currencyCode="GBP",
-                max=10
-            )
-            flights = response.data
-
-            if not flights:
-                st.warning("❌ No flights found. Would you like to try a different date or airport?")
-                st.stop()
-
-            # ✅ Format Flight Results
-            flight_results = []
-            for flight in flights:
-                price = float(flight["price"]["total"])
-                airline = flight["validatingAirlineCodes"][0]
-                stops = len(flight["itineraries"][0]["segments"]) - 1
-                duration = flight["itineraries"][0]["duration"]
-
-                flight_results.append({
-                    "Airline": airline,
-                    "Stops": stops,
-                    "Duration": duration,
-                    "Price (GBP)": f"£{price:.2f}"
-                })
-
-            df = pd.DataFrame(flight_results)
-            st.write("🛫 **Flight Results:**")
-            st.dataframe(df)
-
-        except ResponseError:
-            st.error("❌ Error retrieving flight data. Please try again later.")
 
     except json.JSONDecodeError:
         st.error("🚨 Error: AI response is not valid JSON.")
