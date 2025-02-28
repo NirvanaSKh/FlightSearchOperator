@@ -102,12 +102,19 @@ if user_input:
     try:
         flight_details = json.loads(flight_info)
         
+        # ✅ Debugging: Print extracted details
+        st.write("🔍 Extracted Flight Details (Raw JSON):", flight_details)
+
         # ✅ Validate Extracted Data
         missing_fields = []
         origin_city = flight_details.get("origin")
         destination_city = flight_details.get("destination")
-        departure_date = convert_to_iso_date(flight_details.get("departure_date"))
+        
+        # ✅ Ensure departure date is properly converted
+        extracted_date = flight_details.get("departure_date")
+        departure_date = convert_to_iso_date(extracted_date) if extracted_date else None
         return_date = convert_to_iso_date(flight_details.get("return_date")) if flight_details.get("return_date") else "One-way"
+
         adults = flight_details.get("adults")
         children = flight_details.get("children", [])
         direct_flight_requested = flight_details.get("direct_flight", False)
