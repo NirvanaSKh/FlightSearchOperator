@@ -44,7 +44,6 @@ def convert_to_iso_date(date_str):
     """Convert contextual dates like 'tomorrow' or 'in 3 days' to YYYY-MM-DD"""
     today = datetime.date.today()
 
-    # ✅ Handle None, empty, or invalid inputs
     if not date_str or not isinstance(date_str, str) or date_str.strip() == "":
         return None  # This will trigger the clarification step
 
@@ -76,6 +75,8 @@ def request_missing_info(missing_fields):
         clarification_needed.append("📅 What date do you want to travel?")
     if "adults" in missing_fields:
         clarification_needed.append("👨‍👩‍👧 How many adults are traveling?")
+    if "children" in missing_fields:
+        clarification_needed.append("👶 How many children (and their ages)?")
     
     return "\n".join(clarification_needed) if clarification_needed else None
 
@@ -107,7 +108,7 @@ if user_input:
         destination_city = flight_details.get("destination")
         departure_date = convert_to_iso_date(flight_details.get("departure_date"))
         return_date = convert_to_iso_date(flight_details.get("return_date")) if flight_details.get("return_date") else "One-way"
-        adults = flight_details.get("adults", 1)
+        adults = flight_details.get("adults")
         children = flight_details.get("children", [])
         direct_flight_requested = flight_details.get("direct_flight", False)
 
@@ -115,7 +116,8 @@ if user_input:
         if not origin_city: missing_fields.append("origin")
         if not destination_city: missing_fields.append("destination")
         if not departure_date: missing_fields.append("departure_date")
-        if adults < 1: missing_fields.append("adults")
+        if adults is None: missing_fields.append("adults")
+        if children is None: missing_fields.append("children")
 
         if missing_fields:
             clarification_message = request_missing_info(missing_fields)
@@ -128,6 +130,18 @@ if user_input:
         if not origin_code or not destination_code:
             st.error("❌ Could not determine airport codes for your cities. Please check your input.")
             st.stop()
+
+        # ✅ Display Flight Search Query
+        st.markdown(f"""
+        **Your Flight Search Query**
+        - ✈️ From: {origin_city}
+        - 🏁 To: {destination_city}
+        - 📅 Departure: {departure_date}
+        - 🔄 Return: {return_date}
+        - 👨‍👩‍👧 Adults: {adults}
+        - 👶 Children: {", ".join([f"{age} years old" for age in children]) if children else "None"}
+        - 🚀 Direct Flight: {"Yes" if direct_flight_requested else "No"}
+        """)
 
         # ✅ Search for Flights
         try:
@@ -148,29 +162,16 @@ if user_input:
             # ✅ Format Flight Results
             flight_results = []
             for flight in flights:
-                price_per_adult = float(flight.get("price", {}).get("total", "0.00"))
-                infant_price = price_per_adult * 0.5 if any(age < 2 for age in children) else 0  
-                total_price = (adults * price_per_adult) + (infant_price * sum(1 for age in children if age < 2))
-
-                airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
-                itineraries = flight["itineraries"][0]
-                stops_count = len(itineraries["segments"]) - 1
-                total_duration = itineraries["duration"]
-
-                stop_details = [seg["arrival"]["iataCode"] for seg in itineraries["segments"][:-1]]  
-                stop_details_str = ", ".join(stop_details) if stop_details else "Direct"
+                price = float(flight["price"]["total"])
+                airline = flight["validatingAirlineCodes"][0]
+                stops = len(flight["itineraries"][0]["segments"]) - 1
+                duration = flight["itineraries"][0]["duration"]
 
                 flight_results.append({
                     "Airline": airline,
-                    "From": origin_city,
-                    "To": destination_city,
-                    "Departure": departure_date,
-                    "Stops": stops_count,
-                    "Stop Details": stop_details_str,
-                    "Total Duration": total_duration,
-                    "Price per Adult (GBP)": f"£{price_per_adult:.2f}",
-                    "Price per Infant (GBP)": f"£{infant_price:.2f}" if infant_price > 0 else "N/A",
-                    "Total Price (GBP)": f"£{total_price:.2f}"
+                    "Stops": stops,
+                    "Duration": duration,
+                    "Price (GBP)": f"£{price:.2f}"
                 })
 
             df = pd.DataFrame(flight_results)
