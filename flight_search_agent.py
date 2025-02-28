@@ -113,7 +113,10 @@ if user_input:
         # ✅ Ensure departure date is properly converted
         extracted_date = flight_details.get("departure_date")
         departure_date = convert_to_iso_date(extracted_date) if extracted_date else None
-        return_date = convert_to_iso_date(flight_details.get("return_date")) if flight_details.get("return_date") else "One-way"
+        
+        # ✅ If `return_date` is null, set it to `"One-way"`
+        return_date = flight_details.get("return_date")
+        return_date = convert_to_iso_date(return_date) if return_date else "One-way"
 
         adults = flight_details.get("adults")
         children = flight_details.get("children", [])
