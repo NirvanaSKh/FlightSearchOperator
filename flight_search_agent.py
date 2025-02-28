@@ -64,22 +64,6 @@ def convert_to_iso_date(date_str):
     except ValueError:
         return None  # Will trigger clarification
 
-# ✅ Function to Ask for Missing Details
-def request_missing_info(missing_fields):
-    clarification_needed = []
-    if "origin" in missing_fields:
-        clarification_needed.append("📍 Where are you departing from?")
-    if "destination" in missing_fields:
-        clarification_needed.append("🏁 Where are you flying to?")
-    if "departure_date" in missing_fields:
-        clarification_needed.append("📅 What date do you want to travel?")
-    if "adults" in missing_fields:
-        clarification_needed.append("👨‍👩‍👧 How many adults are traveling?")
-    if "children" in missing_fields:
-        clarification_needed.append("👶 How many children (and their ages)?")
-    
-    return "\n".join(clarification_needed) if clarification_needed else None
-
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Agent")
 st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults')")
@@ -101,38 +85,15 @@ if user_input:
 
     try:
         flight_details = json.loads(flight_info)
-        
-        # ✅ Debugging: Print extracted details
-        st.write("🔍 Extracted Flight Details (Raw JSON):", flight_details)
 
         # ✅ Validate Extracted Data
-        missing_fields = []
         origin_city = flight_details.get("origin")
         destination_city = flight_details.get("destination")
-        
-        # ✅ Ensure departure date is properly converted
-        extracted_date = flight_details.get("departure_date")
-        departure_date = convert_to_iso_date(extracted_date) if extracted_date else None
-        
-        # ✅ If `return_date` is null, set it to `"One-way"`
-        return_date = flight_details.get("return_date")
-        return_date = convert_to_iso_date(return_date) if return_date else "One-way"
-
+        departure_date = convert_to_iso_date(flight_details.get("departure_date"))
+        return_date = convert_to_iso_date(flight_details.get("return_date")) if flight_details.get("return_date") else "One-way"
         adults = flight_details.get("adults")
         children = flight_details.get("children", [])
         direct_flight_requested = flight_details.get("direct_flight", False)
-
-        # ✅ Check for missing fields
-        if not origin_city: missing_fields.append("origin")
-        if not destination_city: missing_fields.append("destination")
-        if not departure_date: missing_fields.append("departure_date")
-        if adults is None: missing_fields.append("adults")
-        if children is None: missing_fields.append("children")
-
-        if missing_fields:
-            clarification_message = request_missing_info(missing_fields)
-            st.warning(clarification_message)
-            st.stop()
 
         # ✅ Convert to IATA Codes
         origin_code = get_iata_code(origin_city)
@@ -172,16 +133,31 @@ if user_input:
             # ✅ Format Flight Results
             flight_results = []
             for flight in flights:
-                price = float(flight["price"]["total"])
-                airline = flight["validatingAirlineCodes"][0]
-                stops = len(flight["itineraries"][0]["segments"]) - 1
-                duration = flight["itineraries"][0]["duration"]
+                price_per_adult = float(flight["price"]["total"])
+                infant_price = price_per_adult * 0.5 if any(age < 2 for age in children) else 0  # Discounted infant price
+                total_price = (adults * price_per_adult) + (infant_price * sum(1 for age in children if age < 2))
+
+                airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
+                itineraries = flight["itineraries"][0]
+                stops_count = len(itineraries["segments"]) - 1
+                total_duration = itineraries["duration"]
+
+                stop_details = []
+                for segment in itineraries["segments"][:-1]:  # Exclude final arrival segment
+                    stop_airport = segment["arrival"]["iataCode"]
+                    stop_duration = segment.get("stopDuration", "N/A")
+                    stop_details.append(f"{stop_airport} ({stop_duration})")
+
+                stop_details_str = ", ".join(stop_details) if stop_details else "Direct"
 
                 flight_results.append({
                     "Airline": airline,
-                    "Stops": stops,
-                    "Duration": duration,
-                    "Price (GBP)": f"£{price:.2f}"
+                    "Stops": stops_count,
+                    "Stop Details": stop_details_str,
+                    "Total Duration": total_duration,
+                    "Price per Adult (GBP)": f"£{price_per_adult:.2f}",
+                    "Price per Infant (GBP)": f"£{infant_price:.2f}" if infant_price > 0 else "N/A",
+                    "Total Price (GBP)": f"£{total_price:.2f}"
                 })
 
             df = pd.DataFrame(flight_results)
