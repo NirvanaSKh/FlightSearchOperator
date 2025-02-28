@@ -24,41 +24,25 @@ amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
 # ✅ Function to Extract IATA Code (Cache First)
-iata_cache = {
-    "London": "LON",
-    "Delhi": "DEL",
-    "New York": "NYC",
-    "Los Angeles": "LAX",
-    "Paris": "PAR",
-    "Tokyo": "TYO",
-    "Dubai": "DXB",
-    "Mumbai": "BOM",
-    "Singapore": "SIN",
-    "Berlin": "BER"
-}
+iata_cache = {}
 
 def get_iata_code(city_name):
     if city_name in iata_cache:
         return iata_cache[city_name]
     try:
-        response = amadeus.reference_data.locations.get(
-            keyword=city_name,
-            subType="CITY,AIRPORT"
-        )
+        response = amadeus.reference_data.locations.get(keyword=city_name, subType="CITY,AIRPORT")
         if response.data:
             iata_code = response.data[0]["iataCode"]
             iata_cache[city_name] = iata_code
             return iata_code
-        else:
-            return None
-    except ResponseError as error:
-        st.error(f"❌ Error fetching IATA code for {city_name}: {error}")
+    except ResponseError:
         return None
+    return None
 
 # ✅ Function to Convert Contextual Dates to `YYYY-MM-DD`
 def convert_to_iso_date(date_str):
     today = datetime.date.today()
-
+    
     if date_str.lower() == "tomorrow":
         return (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -67,109 +51,98 @@ def convert_to_iso_date(date_str):
             days = int(date_str.split("in ")[1].split(" days")[0])
             return (today + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
         except:
-            return date_str  
+            return None  
 
     try:
         return datetime.datetime.strptime(date_str + f" {today.year}", "%B %d %Y").strftime("%Y-%m-%d")
     except ValueError:
-        return date_str  
+        return None  
+
+# ✅ Function to Ask for Missing Details
+def request_missing_info(missing_fields):
+    clarification_needed = []
+    if "origin" in missing_fields:
+        clarification_needed.append("📍 Where are you departing from?")
+    if "destination" in missing_fields:
+        clarification_needed.append("🏁 Where are you flying to?")
+    if "departure_date" in missing_fields:
+        clarification_needed.append("📅 What date do you want to travel?")
+    if "adults" in missing_fields:
+        clarification_needed.append("👨‍👩‍👧 How many adults are traveling?")
+    
+    return "\n".join(clarification_needed) if clarification_needed else None
 
 # ✅ Streamlit UI
-st.title("✈️ Flight Search Chatbot")
+st.title("✈️ Flight Search Agent")
 st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults')")
-
-# ✅ Apply Custom CSS for Adaptive Query Table
-st.markdown("""
-    <style>
-        .custom-table-container {
-            width: 100%;
-            max-width: 100%;
-            overflow-x: auto;
-            display: block;
-        }
-        .custom-table {
-            width: 100%;
-            border-collapse: collapse;
-            text-align: left;
-            font-size: 18px;
-        }
-        .custom-table th, .custom-table td {
-            padding: 10px;
-            border-bottom: 1px solid #ddd;
-        }
-        .custom-table th {
-            background-color: #004080;
-            color: white;
-            text-align: left;
-        }
-    </style>
-""", unsafe_allow_html=True)
 
 # ✅ User Input
 user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
 
 if user_input:
-    # ✅ Step 4: Extract Flight Details Using OpenAI GPT-3.5 Turbo (Free Model)
+    # ✅ Extract Flight Details Using OpenAI GPT-3.5 Turbo
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages), direct_flight (true/false). Ensure children list contains only numbers and is empty if there are no children."},
+            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages), direct_flight (true/false)."},
             {"role": "user", "content": user_input}
         ]
     )
 
-    flight_info = response.choices[0].message.content 
+    flight_info = response.choices[0].message.content
 
-    # ✅ Parse the AI response into a JSON dictionary
     try:
         flight_details = json.loads(flight_info)
-
-        # ✅ Convert Key Details for Display
-        origin_city = flight_details.get("origin", "")
-        destination_city = flight_details.get("destination", "")
-        departure_date = convert_to_iso_date(flight_details.get("departure_date", "2025-06-10"))
-        return_date = convert_to_iso_date(flight_details.get("return_date", None)) if flight_details.get("return_date") else "One-way"
+        
+        # ✅ Validate Extracted Data
+        missing_fields = []
+        origin_city = flight_details.get("origin")
+        destination_city = flight_details.get("destination")
+        departure_date = convert_to_iso_date(flight_details.get("departure_date"))
+        return_date = convert_to_iso_date(flight_details.get("return_date")) if flight_details.get("return_date") else "One-way"
         adults = flight_details.get("adults", 1)
         children = flight_details.get("children", [])
         direct_flight_requested = flight_details.get("direct_flight", False)
 
-        # ✅ Format Children’s Ages
-        children_str = ", ".join([f"{age} years old" for age in children]) if children else "None"
+        # ✅ Check for missing fields
+        if not origin_city: missing_fields.append("origin")
+        if not destination_city: missing_fields.append("destination")
+        if not departure_date: missing_fields.append("departure_date")
+        if adults < 1: missing_fields.append("adults")
 
-        # ✅ **Display Extracted Flight Query in Adaptive Table**
-        st.markdown(f"""
-        <div class="custom-table-container">
-        <table class="custom-table">
-            <tr><th>Field</th><th>Details</th></tr>
-            <tr><td>✈️ From</td><td>{origin_city}</td></tr>
-            <tr><td>🏁 To</td><td>{destination_city}</td></tr>
-            <tr><td>📅 Departure</td><td>{departure_date}</td></tr>
-            <tr><td>🔄 Return</td><td>{return_date}</td></tr>
-            <tr><td>👨‍👩‍👧 Adults</td><td>{adults}</td></tr>
-            <tr><td>👶 Children</td><td>{children_str}</td></tr>
-            <tr><td>🚀 Direct Flight</td><td>{"Yes" if direct_flight_requested else "No"}</td></tr>
-        </table>
-        </div>
-        """, unsafe_allow_html=True)
+        if missing_fields:
+            clarification_message = request_missing_info(missing_fields)
+            st.warning(clarification_message)
+            st.stop()
+
+        # ✅ Convert to IATA Codes
+        origin_code = get_iata_code(origin_city)
+        destination_code = get_iata_code(destination_city)
+        if not origin_code or not destination_code:
+            st.error("❌ Could not determine airport codes for your cities. Please check your input.")
+            st.stop()
 
         # ✅ Search for Flights
-        response = amadeus.shopping.flight_offers_search.get(
-            originLocationCode=get_iata_code(origin_city),
-            destinationLocationCode=get_iata_code(destination_city),
-            departureDate=departure_date,
-            adults=adults,
-            currencyCode="GBP",
-            max=10
-        )
-        flights = response.data
+        try:
+            response = amadeus.shopping.flight_offers_search.get(
+                originLocationCode=origin_code,
+                destinationLocationCode=destination_code,
+                departureDate=departure_date,
+                adults=adults,
+                currencyCode="GBP",
+                max=10
+            )
+            flights = response.data
 
-        if not flights:
-            st.error("❌ No flights found. Try different dates or locations.")
-        else:
+            if not flights:
+                st.warning("❌ No flights found. Would you like to try a different date or airport?")
+                st.stop()
+
+            # ✅ Format Flight Results
             flight_results = []
             for flight in flights:
                 price_per_adult = float(flight.get("price", {}).get("total", "0.00"))
-                infant_price = price_per_adult * 0.5 if any(age < 2 for age in children) else 0  # Discounted infant price
+                infant_price = price_per_adult * 0.5 if any(age < 2 for age in children) else 0  
                 total_price = (adults * price_per_adult) + (infant_price * sum(1 for age in children if age < 2))
 
                 airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
@@ -178,7 +151,7 @@ if user_input:
                 total_duration = itineraries["duration"]
 
                 stop_details = []
-                for segment in itineraries["segments"][:-1]:  # Exclude final arrival segment
+                for segment in itineraries["segments"][:-1]:  
                     stop_airport = segment["arrival"]["iataCode"]
                     stop_duration = segment.get("stopDuration", "N/A")
                     stop_details.append(f"{stop_airport} ({stop_duration})")
@@ -202,5 +175,8 @@ if user_input:
             st.write("🛫 **Flight Results:**")
             st.dataframe(df)
 
-    except json.JSONDecodeError as e:
-        st.error(f"🚨 Error: AI response is not valid JSON. {e}")
+        except ResponseError:
+            st.error("❌ Error retrieving flight data. Please try again later.")
+
+    except json.JSONDecodeError:
+        st.error("🚨 Error: AI response is not valid JSON.")
