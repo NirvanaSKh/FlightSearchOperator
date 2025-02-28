@@ -95,6 +95,23 @@ if user_input:
         children = flight_details.get("children", [])
         direct_flight_requested = flight_details.get("direct_flight", False)
 
+        # ✅ **Prompt user for missing details instead of erroring out**
+        missing_details = []
+        if not origin_city:
+            missing_details.append("📍 Where are you departing from?")
+        if not destination_city:
+            missing_details.append("🏁 Where do you want to fly to?")
+        if not departure_date:
+            missing_details.append("📅 What date do you want to travel?")
+        if adults is None:
+            missing_details.append("👨‍👩‍👧 How many adults are traveling?")
+        if children is None:
+            missing_details.append("👶 How many children (and their ages)?")
+
+        if missing_details:
+            st.warning("\n".join(missing_details))
+            st.stop()
+
         # ✅ Convert to IATA Codes
         origin_code = get_iata_code(origin_city)
         destination_code = get_iata_code(destination_city)
@@ -133,31 +150,16 @@ if user_input:
             # ✅ Format Flight Results
             flight_results = []
             for flight in flights:
-                price_per_adult = float(flight["price"]["total"])
-                infant_price = price_per_adult * 0.5 if any(age < 2 for age in children) else 0  # Discounted infant price
-                total_price = (adults * price_per_adult) + (infant_price * sum(1 for age in children if age < 2))
-
-                airline = flight.get("validatingAirlineCodes", ["Unknown"])[0]
-                itineraries = flight["itineraries"][0]
-                stops_count = len(itineraries["segments"]) - 1
-                total_duration = itineraries["duration"]
-
-                stop_details = []
-                for segment in itineraries["segments"][:-1]:  # Exclude final arrival segment
-                    stop_airport = segment["arrival"]["iataCode"]
-                    stop_duration = segment.get("stopDuration", "N/A")
-                    stop_details.append(f"{stop_airport} ({stop_duration})")
-
-                stop_details_str = ", ".join(stop_details) if stop_details else "Direct"
+                price = float(flight["price"]["total"])
+                airline = flight["validatingAirlineCodes"][0]
+                stops = len(flight["itineraries"][0]["segments"]) - 1
+                duration = flight["itineraries"][0]["duration"]
 
                 flight_results.append({
                     "Airline": airline,
-                    "Stops": stops_count,
-                    "Stop Details": stop_details_str,
-                    "Total Duration": total_duration,
-                    "Price per Adult (GBP)": f"£{price_per_adult:.2f}",
-                    "Price per Infant (GBP)": f"£{infant_price:.2f}" if infant_price > 0 else "N/A",
-                    "Total Price (GBP)": f"£{total_price:.2f}"
+                    "Stops": stops,
+                    "Duration": duration,
+                    "Price (GBP)": f"£{price:.2f}"
                 })
 
             df = pd.DataFrame(flight_results)
