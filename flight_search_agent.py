@@ -41,22 +41,29 @@ def get_iata_code(city_name):
 
 # ✅ Function to Convert Contextual Dates to `YYYY-MM-DD`
 def convert_to_iso_date(date_str):
+    """Convert contextual dates like 'tomorrow' or 'in 3 days' to YYYY-MM-DD"""
     today = datetime.date.today()
-    
-    if date_str.lower() == "tomorrow":
+
+    # ✅ Handle None, empty, or invalid inputs
+    if not date_str or not isinstance(date_str, str) or date_str.strip() == "":
+        return None  # This will trigger the clarification step
+
+    date_str = date_str.lower().strip()
+
+    if date_str == "tomorrow":
         return (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
 
     if "in " in date_str and " days" in date_str:
         try:
             days = int(date_str.split("in ")[1].split(" days")[0])
             return (today + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
-        except:
+        except ValueError:
             return None  
 
     try:
         return datetime.datetime.strptime(date_str + f" {today.year}", "%B %d %Y").strftime("%Y-%m-%d")
     except ValueError:
-        return None  
+        return None  # Will trigger clarification
 
 # ✅ Function to Ask for Missing Details
 def request_missing_info(missing_fields):
@@ -150,12 +157,7 @@ if user_input:
                 stops_count = len(itineraries["segments"]) - 1
                 total_duration = itineraries["duration"]
 
-                stop_details = []
-                for segment in itineraries["segments"][:-1]:  
-                    stop_airport = segment["arrival"]["iataCode"]
-                    stop_duration = segment.get("stopDuration", "N/A")
-                    stop_details.append(f"{stop_airport} ({stop_duration})")
-
+                stop_details = [seg["arrival"]["iataCode"] for seg in itineraries["segments"][:-1]]  
                 stop_details_str = ", ".join(stop_details) if stop_details else "Direct"
 
                 flight_results.append({
