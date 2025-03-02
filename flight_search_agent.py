@@ -42,11 +42,9 @@ def get_iata_code(city_name):
 
 # ✅ Function to Convert Contextual & Natural Language Dates to `YYYY-MM-DD`
 def convert_to_iso_date(date_str):
-    """Convert contextual dates like 'tomorrow', 'in 3 days', or '5th May' to YYYY-MM-DD"""
     today = datetime.date.today()
-
     if not date_str or not isinstance(date_str, str) or date_str.strip() == "":
-        return None  # This will trigger the clarification step
+        return None
 
     date_str = date_str.lower().strip()
 
@@ -60,20 +58,34 @@ def convert_to_iso_date(date_str):
         except (ValueError, AttributeError):
             return None  
 
-    # ✅ Handle ordinal numbers like "5th May", "1st June"
     date_str = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", date_str)
 
     try:
-        # Handle formats like "5 May", "May 5"
         return datetime.datetime.strptime(date_str + f" {today.year}", "%d %B %Y").strftime("%Y-%m-%d")
     except ValueError:
         try:
             return datetime.datetime.strptime(date_str + f" {today.year}", "%B %d %Y").strftime("%Y-%m-%d")
         except ValueError:
-            try:
-                return datetime.datetime.strptime(date_str, "%d/%m/%Y").strftime("%Y-%m-%d")
-            except ValueError:
-                return None  # Will trigger clarification
+            return None
+
+# ✅ Function to Search Flights on Amadeus
+def search_flights(origin_code, destination_code, departure_date, adults, direct_flight):
+    try:
+        response = amadeus.shopping.flight_offers_search.get(
+            originLocationCode=origin_code,
+            destinationLocationCode=destination_code,
+            departureDate=departure_date,
+            adults=adults,
+            nonStop=direct_flight,
+            max=5  # Limit to top 5 results
+        )
+
+        if response.data:
+            return response.data
+        else:
+            return None
+    except ResponseError:
+        return None
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Agent")
@@ -101,9 +113,7 @@ if user_input:
         origin_city = flight_details.get("origin")
         destination_city = flight_details.get("destination")
         departure_date = convert_to_iso_date(flight_details.get("departure_date"))
-        return_date = convert_to_iso_date(flight_details.get("return_date")) if flight_details.get("return_date") else "One-way"
-        adults = flight_details.get("adults")
-        children = flight_details.get("children", [])
+        adults = flight_details.get("adults", 1)  # Default to 1 if missing
         direct_flight_requested = flight_details.get("direct_flight", False)
 
         # ✅ **Prompt user for missing details instead of erroring out**
@@ -116,8 +126,6 @@ if user_input:
             missing_details.append("📅 What date do you want to travel?")
         if adults is None:
             missing_details.append("👨‍👩‍👧 How many adults are traveling?")
-        if children is None:
-            missing_details.append("👶 How many children (and their ages)?")
 
         if missing_details:
             st.warning("\n".join(missing_details))
@@ -130,17 +138,29 @@ if user_input:
             st.error("❌ Could not determine airport codes for your cities. Please check your input.")
             st.stop()
 
-        # ✅ Display Flight Search Query
-        st.markdown(f"""
-        **Your Flight Search Query**
-        - ✈️ From: {origin_city} ({origin_code})
-        - 🏁 To: {destination_city} ({destination_code})
-        - 📅 Departure: {departure_date}
-        - 🔄 Return: {return_date}
-        - 👨‍👩‍👧 Adults: {adults}
-        - 👶 Children: {", ".join([f"{age} years old" for age in children]) if children else "None"}
-        - 🚀 Direct Flight: {"Yes" if direct_flight_requested else "No"}
-        """)
+        # ✅ Search Flights
+        flights = search_flights(origin_code, destination_code, departure_date, adults, direct_flight_requested)
+
+        # ✅ Display Flight Results
+        if flights:
+            flight_data = []
+            for flight in flights:
+                segments = flight["itineraries"][0]["segments"]
+                flight_info = {
+                    "Airline": segments[0]["carrierCode"],
+                    "Flight Number": segments[0]["number"],
+                    "Departure": segments[0]["departure"]["iataCode"] + " " + segments[0]["departure"]["at"],
+                    "Arrival": segments[-1]["arrival"]["iataCode"] + " " + segments[-1]["arrival"]["at"],
+                    "Duration": flight["itineraries"][0]["duration"],
+                    "Price (EUR)": flight["price"]["total"]
+                }
+                flight_data.append(flight_info)
+
+            df = pd.DataFrame(flight_data)
+            st.write("### ✈️ Available Flights")
+            st.dataframe(df)
+        else:
+            st.error("❌ No flights found for the given criteria.")
 
     except json.JSONDecodeError:
         st.error("🚨 Error: AI response is not valid JSON.")
