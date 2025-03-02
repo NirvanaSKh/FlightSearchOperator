@@ -39,10 +39,8 @@ def get_iata_code(city_name):
 
 # ✅ Convert Date to `YYYY-MM-DD`
 def convert_to_iso_date(date_str):
-    """Convert natural language dates like 'tomorrow', '5th May', 'May 5' to YYYY-MM-DD format."""
     today = datetime.date.today()
-    
-    if not date_str or not isinstance(date_str, str) or date_str.strip() == "":
+    if not date_str:
         return None
 
     date_str = date_str.lower().strip()
@@ -70,19 +68,18 @@ def convert_to_iso_date(date_str):
             return None  # Trigger clarification
 
 # ✅ Flight Search with Debugging
-def search_flights(origin_code, destination_code, departure_date, adults, direct_flight):
+def search_flights(origin_code, destination_code, departure_date, adults):
     try:
         st.write(f"🔍 **Searching flights...**")
-        st.write(f"✈️ From: {origin_code} | 🏁 To: {destination_code} | 📅 Date: {departure_date} | 👨‍👩‍👧 Adults: {adults} | 🚀 Direct: {direct_flight}")
+        st.write(f"✈️ From: {origin_code} | 🏁 To: {destination_code} | 📅 Date: {departure_date} | 👨‍👩‍👧 Adults: {adults}")
 
         response = amadeus.shopping.flight_offers_search.get(
             originLocationCode=origin_code,
             destinationLocationCode=destination_code,
             departureDate=departure_date,
             adults=adults,
-            nonStop=direct_flight,
-            travelClass="ECONOMY",  # Default travel class
-            currencyCode="USD"  # Explicit currency
+            travelClass="ECONOMY",
+            currencyCode="USD"
         )
 
         if response.data:
@@ -91,7 +88,7 @@ def search_flights(origin_code, destination_code, departure_date, adults, direct
             st.error("❌ No flights found. Try modifying your search.")
             return None
     except ResponseError as e:
-        st.error(f"🚨 API Error: {e}")
+        st.error(f"🚨 API Error: {e.code} - {e.description}")
         return None
 
 # ✅ Streamlit UI
@@ -105,7 +102,7 @@ if user_input:
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages), direct_flight (true/false)."},
+            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages)."},
             {"role": "user", "content": user_input}
         ]
     )
@@ -117,14 +114,14 @@ if user_input:
 
         origin_city = flight_details.get("origin")
         destination_city = flight_details.get("destination")
-        
+
         # ✅ Normalize date before parsing
         raw_date = flight_details.get("departure_date", "").replace(",", "").strip()
         departure_date = convert_to_iso_date(raw_date)
-        
-        adults = flight_details.get("adults", 1)
-        direct_flight_requested = flight_details.get("direct_flight", False)
 
+        adults = flight_details.get("adults", 1)
+
+        # ✅ Check for missing details
         missing_details = []
         if not origin_city:
             missing_details.append("📍 Where are you departing from?")
@@ -139,13 +136,15 @@ if user_input:
             st.warning("\n".join(missing_details))
             st.stop()
 
+        # ✅ Convert to IATA Codes
         origin_code = get_iata_code(origin_city)
         destination_code = get_iata_code(destination_city)
         if not origin_code or not destination_code:
             st.error("❌ Could not determine airport codes. Please check your input.")
             st.stop()
 
-        flights = search_flights(origin_code, destination_code, departure_date, adults, direct_flight_requested)
+        # ✅ Search Flights
+        flights = search_flights(origin_code, destination_code, departure_date, adults)
 
         if flights:
             flight_data = []
