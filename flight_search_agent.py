@@ -22,6 +22,12 @@ if not API_KEY or not API_SECRET or not OPENAI_API_KEY:
 amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
+# ✅ Initialize session state for chat history
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
+if "missing_details" not in st.session_state:
+    st.session_state.missing_details = {}
+
 # ✅ Function to Extract IATA Code (Cache First)
 iata_cache = {}
 
@@ -49,17 +55,15 @@ def convert_to_iso_date(date_str):
 
     date_str = date_str.lower().strip()
 
-    # ✅ Handle "tomorrow"
     if date_str in ["tomorrow", "tmrw"]:
         return (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
 
-    # ✅ Handle "in X days"
     match = re.search(r"in (\d+) days", date_str)
     if match:
         days = int(match.group(1))
         return (today + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
 
-    date_str = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", date_str)  # Remove ordinal suffixes
+    date_str = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", date_str)
 
     try:
         return datetime.datetime.strptime(date_str + f" {today.year}", "%d %B %Y").strftime("%Y-%m-%d")
@@ -67,23 +71,18 @@ def convert_to_iso_date(date_str):
         try:
             return datetime.datetime.strptime(date_str + f" {today.year}", "%B %d %Y").strftime("%Y-%m-%d")
         except ValueError:
-            return None  # Trigger clarification
-
-# ✅ Flight Search with Fixes for Dates
-def search_flights(origin_code, destination_code, departure_date, adults, children, infants, direct_flight):
-    """Fetch and return top 5 cheapest direct flight offers from Amadeus API."""
-    try:
-        if not origin_code or not destination_code or not departure_date:
-            st.error("❌ Missing valid airport codes or date. Please check your input.")
             return None
 
+# ✅ Flight Search Function
+def search_flights(origin_code, destination_code, departure_date, adults, children, infants, direct_flight):
+    """Fetch and return top 5 cheapest flight offers from Amadeus API."""
+    try:
         st.write(f"🔍 **Searching flights...**")
         st.write(f"✈️ From: {origin_code} | 🏁 To: {destination_code} | 📅 Date: {departure_date} | "
                  f"👨‍👩‍👧 Adults: {adults} | 🧒 Children: {len(children)} | 👶 Infants: {infants} | 🚀 Direct: {direct_flight}")
 
         time.sleep(1)  # Prevent hitting API rate limits
 
-        # ✅ Build API request with proper parameters
         api_params = {
             "originLocationCode": origin_code,
             "destinationLocationCode": destination_code,
@@ -97,25 +96,22 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
         }
 
         if direct_flight:
-            api_params["nonStop"] = True  # ✅ Ensure direct flights
+            api_params["nonStop"] = True  
 
         response = amadeus.shopping.flight_offers_search.get(**api_params)
 
         if not response.data:
             return None
 
-        # ✅ Process and Sort Flights by Cheapest Price
         flight_data = []
         for flight in response.data:
             segments = flight["itineraries"][0]["segments"]
             num_stops = len(segments) - 1
             total_price = flight["price"]["total"]
 
-            # ✅ Ensure only direct flights are included if requested
             if direct_flight and num_stops > 0:
-                continue  # Skip flights with stops
+                continue  
 
-            # ✅ Extract pricing per traveler type
             price_per_adult, price_per_child, price_per_infant = "N/A", "N/A", "N/A"
 
             for traveler in flight["travelerPricings"]:
@@ -127,7 +123,7 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
                 elif traveler_type == "CHILD":
                     price_per_child = traveler_price
                 elif traveler_type in ["HELD_INFANT", "SEATED_INFANT"]:
-                    price_per_infant = traveler_price  # ✅ Ensure infant price is captured
+                    price_per_infant = traveler_price  
 
             flight_data.append({
                 "Airline": segments[0]["carrierCode"],
@@ -141,7 +137,6 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
                 "Total Price (USD)": total_price
             })
 
-        # ✅ Sort by total price and keep only top 5
         flight_data = sorted(flight_data, key=lambda x: float(x["Total Price (USD)"]))[:5]
 
         return flight_data
@@ -152,13 +147,19 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Agent")
 
-user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
+for msg in st.session_state.chat_history:
+    st.chat_message(msg["role"]).write(msg["content"])
+
+user_input = st.chat_input("Type your flight request here...")
 
 if user_input:
+    st.session_state.chat_history.append({"role": "user", "content": user_input})
+    st.chat_message("user").write(user_input)
+
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages), infants, direct_flight (true/false)."},
+            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, adults, children (list of ages), infants, direct_flight (true/false)."},
             {"role": "user", "content": user_input}
         ]
     )
@@ -166,27 +167,25 @@ if user_input:
     try:
         flight_details = json.loads(response.choices[0].message.content)
 
-        origin_city = flight_details.get("origin")
-        destination_city = flight_details.get("destination")
+        missing_questions = []
+        for key in ["origin", "destination", "departure_date", "adults"]:
+            if not flight_details.get(key):
+                missing_questions.append(f"❓ What is your {key.replace('_', ' ')}?")
 
-        raw_date = flight_details.get("departure_date", "")
-        if raw_date:
-            raw_date = raw_date.replace(",", "").strip()
-        departure_date = convert_to_iso_date(raw_date)
+        if missing_questions:
+            prompt = "\n".join(missing_questions)
+            st.session_state.chat_history.append({"role": "assistant", "content": prompt})
+            st.chat_message("assistant").write(prompt)
+            st.stop()
 
-        adults = flight_details.get("adults", 1)
-        children = flight_details.get("children", [])
-        infants = flight_details.get("infants", 0)
-        direct_flight = flight_details.get("direct_flight", False)
-
-        flights = search_flights(get_iata_code(origin_city), get_iata_code(destination_city), departure_date, adults, children, infants, direct_flight)
+        flights = search_flights(get_iata_code(flight_details["origin"]), get_iata_code(flight_details["destination"]),
+                                 convert_to_iso_date(flight_details["departure_date"]), flight_details["adults"],
+                                 flight_details.get("children", []), flight_details.get("infants", 0),
+                                 flight_details.get("direct_flight", False))
 
         if flights:
             df = pd.DataFrame(flights)
-            st.write("### ✈️ Top 5 Cheapest Direct Flights")
+            st.write("### ✈️ Top 5 Cheapest Flights")
             st.dataframe(df)
-        else:
-            st.error("❌ No direct flights found. Please adjust your search.")
-
     except json.JSONDecodeError:
         st.error("🚨 Error: AI response is not valid JSON.")
