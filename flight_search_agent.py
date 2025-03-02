@@ -73,7 +73,7 @@ def convert_to_iso_date(date_str):
         except ValueError:
             return None
 
-# ✅ Flight Search with Retry for Direct Flights & Correct Infant Pricing
+# ✅ Flight Search with Retry for Direct Flights
 def search_flights(origin_code, destination_code, departure_date, adults, children, infants, direct_flight):
     """Fetch and return top 5 cheapest flight offers from Amadeus API, retrying if direct flights fail."""
     try:
@@ -103,16 +103,7 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
         if direct_flight:
             api_params["nonStop"] = True  
 
-        try:
-            response = amadeus.shopping.flight_offers_search.get(**api_params)
-        except ResponseError as e:
-            # ✅ Retry without `nonStop=True` if direct flight search causes a 400 error
-            if e.code == 400 and direct_flight:
-                st.warning("⚠️ No direct flights found. Searching for connecting flights instead.")
-                del api_params["nonStop"]
-                response = amadeus.shopping.flight_offers_search.get(**api_params)
-            else:
-                raise e  # Re-raise other errors
+        response = amadeus.shopping.flight_offers_search.get(**api_params)
 
         if not response.data:
             return None
@@ -126,28 +117,12 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
             if direct_flight and num_stops > 0:
                 continue  
 
-            price_per_adult, price_per_child, price_per_infant = "N/A", "N/A", "N/A"
-
-            for traveler in flight["travelerPricings"]:
-                traveler_type = traveler["travelerType"]
-                traveler_price = traveler["price"]["total"]
-
-                if traveler_type == "ADULT":
-                    price_per_adult = traveler_price
-                elif traveler_type == "CHILD":
-                    price_per_child = traveler_price
-                elif traveler_type in ["HELD_INFANT", "SEATED_INFANT"]:
-                    price_per_infant = traveler_price  
-
             flight_data.append({
                 "Airline": segments[0]["carrierCode"],
                 "Flight Number": segments[0]["number"],
                 "Departure": f"{segments[0]['departure']['iataCode']} {segments[0]['departure']['at']}",
                 "Arrival": f"{segments[-1]['arrival']['iataCode']} {segments[-1]['arrival']['at']}",
                 "Stops": num_stops,
-                "Price per Adult (USD)": price_per_adult,
-                "Price per Child (USD)": price_per_child,
-                "Price per Infant (USD)": price_per_infant,
                 "Total Price (USD)": total_price
             })
 
@@ -177,6 +152,23 @@ if user_input:
     )
 
     flight_details = json.loads(response.choices[0].message.content)
+
+    # ✅ Ensure missing details are requested before proceeding
+    missing_questions = []
+    if not flight_details.get("origin"):
+        missing_questions.append("📍 Where are you departing from?")
+    if not flight_details.get("destination"):
+        missing_questions.append("🏁 Where do you want to fly to?")
+    if not flight_details.get("departure_date"):
+        missing_questions.append("📅 What date do you want to travel?")
+    if not flight_details.get("adults"):
+        missing_questions.append("👨‍👩‍👧 How many adults are traveling?")
+
+    if missing_questions:
+        prompt = "\n".join(missing_questions)
+        st.session_state.chat_history.append({"role": "assistant", "content": prompt})
+        st.chat_message("assistant").write(prompt)
+        st.stop()
 
     flights = search_flights(get_iata_code(flight_details["origin"]), get_iata_code(flight_details["destination"]),
                              convert_to_iso_date(flight_details["departure_date"]), flight_details["adults"],
