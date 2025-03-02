@@ -64,12 +64,16 @@ def convert_to_iso_date(date_str):
     date_str = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", date_str)
 
     try:
+        # Handle formats like "5 May", "May 5"
         return datetime.datetime.strptime(date_str + f" {today.year}", "%d %B %Y").strftime("%Y-%m-%d")
     except ValueError:
         try:
             return datetime.datetime.strptime(date_str + f" {today.year}", "%B %d %Y").strftime("%Y-%m-%d")
         except ValueError:
-            return None  # Will trigger clarification
+            try:
+                return datetime.datetime.strptime(date_str, "%d/%m/%Y").strftime("%Y-%m-%d")
+            except ValueError:
+                return None  # Will trigger clarification
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Agent")
@@ -129,8 +133,8 @@ if user_input:
         # ✅ Display Flight Search Query
         st.markdown(f"""
         **Your Flight Search Query**
-        - ✈️ From: {origin_city}
-        - 🏁 To: {destination_city}
+        - ✈️ From: {origin_city} ({origin_code})
+        - 🏁 To: {destination_city} ({destination_code})
         - 📅 Departure: {departure_date}
         - 🔄 Return: {return_date}
         - 👨‍👩‍👧 Adults: {adults}
