@@ -26,6 +26,9 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 iata_cache = {}
 
 def get_iata_code(city_name):
+    """Fetch IATA code for a given city."""
+    if not city_name:
+        return None
     if city_name in iata_cache:
         return iata_cache[city_name]
     try:
@@ -34,7 +37,7 @@ def get_iata_code(city_name):
             iata_code = response.data[0]["iataCode"]
             iata_cache[city_name] = iata_code
             return iata_code
-    except ResponseError:
+    except ResponseError as e:
         return None
 
 # ✅ Convert Date to `YYYY-MM-DD`
@@ -54,10 +57,14 @@ def convert_to_iso_date(date_str):
         except ValueError:
             return None
 
-# ✅ Flight Search with Fixes for Infants and Children
+# ✅ Flight Search with Fixes for IATA Codes and Infants
 def search_flights(origin_code, destination_code, departure_date, adults, children, infants, direct_flight):
     """Fetch and return top 5 cheapest direct flight offers from Amadeus API."""
     try:
+        if not origin_code or not destination_code:
+            st.error("❌ Missing valid airport codes. Please check city names.")
+            return None
+
         st.write(f"🔍 **Searching flights...**")
         st.write(f"✈️ From: {origin_code} | 🏁 To: {destination_code} | 📅 Date: {departure_date} | "
                  f"👨‍👩‍👧 Adults: {adults} | 🧒 Children: {len(children)} | 👶 Infants: {infants} | 🚀 Direct: {direct_flight}")
@@ -132,9 +139,7 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Agent")
-st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults and 2 children (1 and 5 year old)')")
 
-# ✅ User Input
 user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
 
 if user_input:
@@ -162,6 +167,11 @@ if user_input:
         infants = flight_details.get("infants", 0)
         direct_flight = flight_details.get("direct_flight", False)
 
+        # ✅ Get IATA Codes
+        origin_code = get_iata_code(origin_city)
+        destination_code = get_iata_code(destination_city)
+
+        # ✅ Search Flights
         flights = search_flights(origin_code, destination_code, departure_date, adults, children, infants, direct_flight)
 
         if flights:
