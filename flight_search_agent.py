@@ -37,16 +37,28 @@ def get_iata_code(city_name):
             iata_code = response.data[0]["iataCode"]
             iata_cache[city_name] = iata_code
             return iata_code
-    except ResponseError as e:
+    except ResponseError:
         return None
 
 # ✅ Convert Date to `YYYY-MM-DD`
 def convert_to_iso_date(date_str):
+    """Convert natural language dates like 'tomorrow' to ISO format (YYYY-MM-DD)."""
     today = datetime.date.today()
     if not date_str or not isinstance(date_str, str):
         return None
 
     date_str = date_str.lower().strip()
+
+    # ✅ Handle "tomorrow"
+    if date_str in ["tomorrow", "tmrw"]:
+        return (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # ✅ Handle "in X days"
+    match = re.search(r"in (\d+) days", date_str)
+    if match:
+        days = int(match.group(1))
+        return (today + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+
     date_str = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", date_str)  # Remove ordinal suffixes
 
     try:
@@ -55,14 +67,14 @@ def convert_to_iso_date(date_str):
         try:
             return datetime.datetime.strptime(date_str + f" {today.year}", "%B %d %Y").strftime("%Y-%m-%d")
         except ValueError:
-            return None
+            return None  # Trigger clarification
 
-# ✅ Flight Search with Fixes for IATA Codes and Infants
+# ✅ Flight Search with Fixes for Dates
 def search_flights(origin_code, destination_code, departure_date, adults, children, infants, direct_flight):
     """Fetch and return top 5 cheapest direct flight offers from Amadeus API."""
     try:
-        if not origin_code or not destination_code:
-            st.error("❌ Missing valid airport codes. Please check city names.")
+        if not origin_code or not destination_code or not departure_date:
+            st.error("❌ Missing valid airport codes or date. Please check your input.")
             return None
 
         st.write(f"🔍 **Searching flights...**")
@@ -78,7 +90,7 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
             "departureDate": departure_date,
             "adults": adults,
             "children": len(children),
-            "infants": infants,  # ✅ Explicitly passing infants
+            "infants": infants,
             "travelClass": "ECONOMY",
             "currencyCode": "USD",
             "max": 10
@@ -167,12 +179,7 @@ if user_input:
         infants = flight_details.get("infants", 0)
         direct_flight = flight_details.get("direct_flight", False)
 
-        # ✅ Get IATA Codes
-        origin_code = get_iata_code(origin_city)
-        destination_code = get_iata_code(destination_city)
-
-        # ✅ Search Flights
-        flights = search_flights(origin_code, destination_code, departure_date, adults, children, infants, direct_flight)
+        flights = search_flights(get_iata_code(origin_city), get_iata_code(destination_city), departure_date, adults, children, infants, direct_flight)
 
         if flights:
             df = pd.DataFrame(flights)
