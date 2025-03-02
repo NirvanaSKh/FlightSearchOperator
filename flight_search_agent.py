@@ -26,7 +26,6 @@ client = openai.OpenAI(api_key=OPENAI_API_KEY)
 iata_cache = {}
 
 def get_iata_code(city_name):
-    """Fetch IATA code for a given city."""
     if city_name in iata_cache:
         return iata_cache[city_name]
     try:
@@ -40,7 +39,6 @@ def get_iata_code(city_name):
 
 # ✅ Convert Date to `YYYY-MM-DD`
 def convert_to_iso_date(date_str):
-    """Convert natural language dates to ISO format."""
     today = datetime.date.today()
     if not date_str or not isinstance(date_str, str):
         return None
@@ -56,8 +54,8 @@ def convert_to_iso_date(date_str):
         except ValueError:
             return None
 
-# ✅ Flight Search with Sorting and Filtering
-def search_flights(origin_code, destination_code, departure_date, adults):
+# ✅ Flight Search with Proper Pricing Extraction
+def search_flights(origin_code, destination_code, departure_date, adults, children):
     """Fetch and return top 5 cheapest flight offers from Amadeus API."""
     try:
         st.write(f"🔍 **Searching flights...**")
@@ -68,6 +66,7 @@ def search_flights(origin_code, destination_code, departure_date, adults):
             destinationLocationCode=destination_code,
             departureDate=departure_date,
             adults=adults,
+            children=len(children),
             travelClass="ECONOMY",
             currencyCode="USD",
             max=10  # Fetch 10 flights and sort by price
@@ -80,10 +79,24 @@ def search_flights(origin_code, destination_code, departure_date, adults):
         flight_data = []
         for flight in response.data:
             segments = flight["itineraries"][0]["segments"]
-            price_per_adult = flight["price"]["base"]
-            price_per_infant = flight["travelerPricings"][0]["price"]["total"] if "infant" in flight["travelerPricings"][0]["travelerType"].lower() else "N/A"
-            total_price = flight["price"]["total"]
             num_stops = len(segments) - 1
+            total_price = flight["price"]["total"]
+
+            # ✅ Extract pricing per traveler type
+            price_per_adult = "N/A"
+            price_per_child = "N/A"
+            price_per_infant = "N/A"
+
+            for traveler in flight["travelerPricings"]:
+                traveler_type = traveler["travelerType"]
+                traveler_price = traveler["price"]["total"]
+
+                if traveler_type == "ADULT":
+                    price_per_adult = traveler_price
+                elif traveler_type == "CHILD":
+                    price_per_child = traveler_price
+                elif traveler_type == "HELD_INFANT" or traveler_type == "SEATED_INFANT":
+                    price_per_infant = traveler_price
 
             flight_data.append({
                 "Airline": segments[0]["carrierCode"],
@@ -92,6 +105,7 @@ def search_flights(origin_code, destination_code, departure_date, adults):
                 "Arrival": f"{segments[-1]['arrival']['iataCode']} {segments[-1]['arrival']['at']}",
                 "Stops": num_stops,
                 "Price per Adult (USD)": price_per_adult,
+                "Price per Child (USD)": price_per_child,
                 "Price per Infant (USD)": price_per_infant,
                 "Total Price (USD)": total_price
             })
@@ -106,7 +120,7 @@ def search_flights(origin_code, destination_code, departure_date, adults):
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Agent")
-st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults')")
+st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults and 2 children (1 and 5 year old)')")
 
 # ✅ User Input
 user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
@@ -132,6 +146,7 @@ if user_input:
         departure_date = convert_to_iso_date(raw_date)
 
         adults = flight_details.get("adults", 1)
+        children = flight_details.get("children", [])
 
         # ✅ Convert to IATA Codes
         origin_code = get_iata_code(origin_city)
@@ -141,7 +156,7 @@ if user_input:
             st.stop()
 
         # ✅ Search Flights
-        flights = search_flights(origin_code, destination_code, departure_date, adults)
+        flights = search_flights(origin_code, destination_code, departure_date, adults, children)
 
         if flights:
             df = pd.DataFrame(flights)
