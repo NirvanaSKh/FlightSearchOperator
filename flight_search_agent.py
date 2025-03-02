@@ -97,4 +97,58 @@ def search_flights(origin_code, destination_code, departure_date, adults):
             })
 
         # ✅ Sort by total price and keep only top 5
-        flight_data = sorted(flight_data, key=lambda x: float(x["Total Price (USD)"]))[:
+        flight_data = sorted(flight_data, key=lambda x: float(x["Total Price (USD)"]))[:5]
+
+        return flight_data
+    except ResponseError as e:
+        st.error(f"🚨 API Error: {e.code} - {e.description}")
+        return None
+
+# ✅ Streamlit UI
+st.title("✈️ Flight Search Agent")
+st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults')")
+
+# ✅ User Input
+user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
+
+if user_input:
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages)."},
+            {"role": "user", "content": user_input}
+        ]
+    )
+
+    try:
+        flight_details = json.loads(response.choices[0].message.content)
+
+        origin_city = flight_details.get("origin")
+        destination_city = flight_details.get("destination")
+
+        raw_date = flight_details.get("departure_date", "")
+        if raw_date:
+            raw_date = raw_date.replace(",", "").strip()
+        departure_date = convert_to_iso_date(raw_date)
+
+        adults = flight_details.get("adults", 1)
+
+        # ✅ Convert to IATA Codes
+        origin_code = get_iata_code(origin_city)
+        destination_code = get_iata_code(destination_city)
+        if not origin_code or not destination_code:
+            st.error("❌ Could not determine airport codes. Please check your input.")
+            st.stop()
+
+        # ✅ Search Flights
+        flights = search_flights(origin_code, destination_code, departure_date, adults)
+
+        if flights:
+            df = pd.DataFrame(flights)
+            st.write("### ✈️ Top 5 Cheapest Flights")
+            st.dataframe(df)
+        else:
+            st.error("❌ No flights found. Please adjust your search.")
+
+    except json.JSONDecodeError:
+        st.error("🚨 Error: AI response is not valid JSON.")
