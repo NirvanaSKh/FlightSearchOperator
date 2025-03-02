@@ -21,7 +21,7 @@ if not API_KEY or not API_SECRET or not OPENAI_API_KEY:
 amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-# ✅ Function to Extract IATA Code
+# ✅ Function to Extract IATA Code (Cache First)
 iata_cache = {}
 
 def get_iata_code(city_name):
@@ -39,28 +39,35 @@ def get_iata_code(city_name):
 
 # ✅ Convert Date to `YYYY-MM-DD`
 def convert_to_iso_date(date_str):
+    """Convert natural language dates like 'tomorrow', '5th May', 'May 5' to YYYY-MM-DD format."""
     today = datetime.date.today()
-    if not date_str:
+    
+    if not date_str or not isinstance(date_str, str) or date_str.strip() == "":
         return None
 
     date_str = date_str.lower().strip()
-    
+
+    # ✅ Handle "tomorrow"
     if date_str == "tomorrow":
         return (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
 
-    if "in " in date_str and " days" in date_str:
-        try:
-            days = int(re.search(r"in (\d+) days", date_str).group(1))
-            return (today + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
-        except (ValueError, AttributeError):
-            return None  
+    # ✅ Handle "in X days"
+    match = re.search(r"in (\d+) days", date_str)
+    if match:
+        days = int(match.group(1))
+        return (today + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
 
+    # ✅ Remove ordinal suffixes: "5th", "1st", "3rd" → "5", "1", "3"
     date_str = re.sub(r"(\d+)(st|nd|rd|th)", r"\1", date_str)
 
+    # ✅ Try parsing both "5 May" and "May 5"
     try:
         return datetime.datetime.strptime(date_str + f" {today.year}", "%d %B %Y").strftime("%Y-%m-%d")
     except ValueError:
-        return None
+        try:
+            return datetime.datetime.strptime(date_str + f" {today.year}", "%B %d %Y").strftime("%Y-%m-%d")
+        except ValueError:
+            return None  # Trigger clarification
 
 # ✅ Flight Search with Debugging
 def search_flights(origin_code, destination_code, departure_date, adults, direct_flight):
@@ -74,8 +81,8 @@ def search_flights(origin_code, destination_code, departure_date, adults, direct
             departureDate=departure_date,
             adults=adults,
             nonStop=direct_flight,
-            travelClass="ECONOMY",  # Ensure default class is set
-            currencyCode="USD"  # Set explicit currency
+            travelClass="ECONOMY",  # Default travel class
+            currencyCode="USD"  # Explicit currency
         )
 
         if response.data:
@@ -110,7 +117,11 @@ if user_input:
 
         origin_city = flight_details.get("origin")
         destination_city = flight_details.get("destination")
-        departure_date = convert_to_iso_date(flight_details.get("departure_date"))
+        
+        # ✅ Normalize date before parsing
+        raw_date = flight_details.get("departure_date", "").replace(",", "").strip()
+        departure_date = convert_to_iso_date(raw_date)
+        
         adults = flight_details.get("adults", 1)
         direct_flight_requested = flight_details.get("direct_flight", False)
 
