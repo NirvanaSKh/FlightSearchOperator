@@ -54,11 +54,12 @@ def convert_to_iso_date(date_str):
         except ValueError:
             return None
 
-# ✅ Flight Search with Proper Pricing Extraction
-def search_flights(origin_code, destination_code, departure_date, adults, children):
-    """Fetch and return top 5 cheapest flight offers from Amadeus API."""
+# ✅ Flight Search with Direct Flight and Infant Price Fix
+def search_flights(origin_code, destination_code, departure_date, adults, children, direct_flight):
+    """Fetch and return top 5 cheapest direct flight offers from Amadeus API."""
     try:
         st.write(f"🔍 **Searching flights...**")
+
         time.sleep(1)  # Prevent hitting API rate limits
 
         response = amadeus.shopping.flight_offers_search.get(
@@ -69,7 +70,8 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
             children=len(children),
             travelClass="ECONOMY",
             currencyCode="USD",
-            max=10  # Fetch 10 flights and sort by price
+            max=10,  # Fetch 10 flights and filter by direct flights
+            nonStop=direct_flight  # Ensures only direct flights if requested
         )
 
         if not response.data:
@@ -82,10 +84,12 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
             num_stops = len(segments) - 1
             total_price = flight["price"]["total"]
 
+            # ✅ Ensure only direct flights are included if requested
+            if direct_flight and num_stops > 0:
+                continue  # Skip flights with stops
+
             # ✅ Extract pricing per traveler type
-            price_per_adult = "N/A"
-            price_per_child = "N/A"
-            price_per_infant = "N/A"
+            price_per_adult, price_per_child, price_per_infant = "N/A", "N/A", "N/A"
 
             for traveler in flight["travelerPricings"]:
                 traveler_type = traveler["travelerType"]
@@ -95,8 +99,8 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
                     price_per_adult = traveler_price
                 elif traveler_type == "CHILD":
                     price_per_child = traveler_price
-                elif traveler_type == "HELD_INFANT" or traveler_type == "SEATED_INFANT":
-                    price_per_infant = traveler_price
+                elif traveler_type in ["HELD_INFANT", "SEATED_INFANT"]:
+                    price_per_infant = traveler_price  # ✅ Ensure infant price is captured
 
             flight_data.append({
                 "Airline": segments[0]["carrierCode"],
@@ -120,7 +124,7 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Agent")
-st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults and 2 children (1 and 5 year old)')")
+st.markdown("💬 **Ask me to find flights for you!** (e.g., 'Find me a direct flight from London to Delhi on May 5 for 2 adults and 1 infant (1 year old)')")
 
 # ✅ User Input
 user_input = st.text_input("You:", placeholder="Type your flight request here and press Enter...")
@@ -129,7 +133,7 @@ if user_input:
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
         messages=[
-            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages)."},
+            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, return_date (null if one-way), adults, children (list of ages), direct_flight (true/false)."},
             {"role": "user", "content": user_input}
         ]
     )
@@ -147,6 +151,7 @@ if user_input:
 
         adults = flight_details.get("adults", 1)
         children = flight_details.get("children", [])
+        direct_flight = flight_details.get("direct_flight", False)
 
         # ✅ Convert to IATA Codes
         origin_code = get_iata_code(origin_city)
@@ -156,14 +161,14 @@ if user_input:
             st.stop()
 
         # ✅ Search Flights
-        flights = search_flights(origin_code, destination_code, departure_date, adults, children)
+        flights = search_flights(origin_code, destination_code, departure_date, adults, children, direct_flight)
 
         if flights:
             df = pd.DataFrame(flights)
-            st.write("### ✈️ Top 5 Cheapest Flights")
+            st.write("### ✈️ Top 5 Cheapest Direct Flights")
             st.dataframe(df)
         else:
-            st.error("❌ No flights found. Please adjust your search.")
+            st.error("❌ No direct flights found. Please adjust your search.")
 
     except json.JSONDecodeError:
         st.error("🚨 Error: AI response is not valid JSON.")
