@@ -73,16 +73,21 @@ def convert_to_iso_date(date_str):
         except ValueError:
             return None
 
-# ✅ Flight Search Function
+# ✅ Flight Search with Retry for Direct Flights & Correct Infant Pricing
 def search_flights(origin_code, destination_code, departure_date, adults, children, infants, direct_flight):
-    """Fetch and return top 5 cheapest flight offers from Amadeus API."""
+    """Fetch and return top 5 cheapest flight offers from Amadeus API, retrying if direct flights fail."""
     try:
+        if not origin_code or not destination_code or not departure_date:
+            st.error("❌ Missing valid airport codes or date. Please check your input.")
+            return None
+
         st.write(f"🔍 **Searching flights...**")
         st.write(f"✈️ From: {origin_code} | 🏁 To: {destination_code} | 📅 Date: {departure_date} | "
                  f"👨‍👩‍👧 Adults: {adults} | 🧒 Children: {len(children)} | 👶 Infants: {infants} | 🚀 Direct: {direct_flight}")
 
         time.sleep(1)  # Prevent hitting API rate limits
 
+        # ✅ Build API request with proper parameters
         api_params = {
             "originLocationCode": origin_code,
             "destinationLocationCode": destination_code,
@@ -98,7 +103,16 @@ def search_flights(origin_code, destination_code, departure_date, adults, childr
         if direct_flight:
             api_params["nonStop"] = True  
 
-        response = amadeus.shopping.flight_offers_search.get(**api_params)
+        try:
+            response = amadeus.shopping.flight_offers_search.get(**api_params)
+        except ResponseError as e:
+            # ✅ Retry without `nonStop=True` if direct flight search causes a 400 error
+            if e.code == 400 and direct_flight:
+                st.warning("⚠️ No direct flights found. Searching for connecting flights instead.")
+                del api_params["nonStop"]
+                response = amadeus.shopping.flight_offers_search.get(**api_params)
+            else:
+                raise e  # Re-raise other errors
 
         if not response.data:
             return None
@@ -158,34 +172,18 @@ if user_input:
 
     response = client.chat.completions.create(
         model="gpt-3.5-turbo",
-        messages=[
-            {"role": "system", "content": "Extract flight details from the user's input. Return output in valid JSON format with keys: origin, destination, departure_date, adults, children (list of ages), infants, direct_flight (true/false)."},
-            {"role": "user", "content": user_input}
-        ]
+        messages=[{"role": "system", "content": "Extract flight details from user input as JSON."},
+                  {"role": "user", "content": user_input}]
     )
 
-    try:
-        flight_details = json.loads(response.choices[0].message.content)
+    flight_details = json.loads(response.choices[0].message.content)
 
-        missing_questions = []
-        for key in ["origin", "destination", "departure_date", "adults"]:
-            if not flight_details.get(key):
-                missing_questions.append(f"❓ What is your {key.replace('_', ' ')}?")
+    flights = search_flights(get_iata_code(flight_details["origin"]), get_iata_code(flight_details["destination"]),
+                             convert_to_iso_date(flight_details["departure_date"]), flight_details["adults"],
+                             flight_details.get("children", []), flight_details.get("infants", 0),
+                             flight_details.get("direct_flight", False))
 
-        if missing_questions:
-            prompt = "\n".join(missing_questions)
-            st.session_state.chat_history.append({"role": "assistant", "content": prompt})
-            st.chat_message("assistant").write(prompt)
-            st.stop()
-
-        flights = search_flights(get_iata_code(flight_details["origin"]), get_iata_code(flight_details["destination"]),
-                                 convert_to_iso_date(flight_details["departure_date"]), flight_details["adults"],
-                                 flight_details.get("children", []), flight_details.get("infants", 0),
-                                 flight_details.get("direct_flight", False))
-
-        if flights:
-            df = pd.DataFrame(flights)
-            st.write("### ✈️ Top 5 Cheapest Flights")
-            st.dataframe(df)
-    except json.JSONDecodeError:
-        st.error("🚨 Error: AI response is not valid JSON.")
+    if flights:
+        df = pd.DataFrame(flights)
+        st.write("### ✈️ Top 5 Cheapest Flights")
+        st.dataframe(df)
