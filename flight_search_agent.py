@@ -89,7 +89,9 @@ def extract_number(text):
 
 # ✅ Function to Check Missing Details and Ask One at a Time
 def ask_for_missing_details():
-    """Ask the user for missing flight details one at a time."""
+    """Ask the user for missing flight details one at a time, but only if they are truly missing."""
+    flight_request = st.session_state.flight_request
+
     missing_questions = {
         "origin": "📍 Where are you departing from?",
         "destination": "🏁 Where do you want to fly to?",
@@ -99,7 +101,7 @@ def ask_for_missing_details():
     }
 
     for key, question in missing_questions.items():
-        if not st.session_state.flight_request[key]:
+        if not flight_request[key]:  # Only ask if truly missing
             st.session_state.chat_history.append({"role": "assistant", "content": question})
             st.chat_message("assistant").write(question)
             return False  # Stops after asking one question
@@ -171,6 +173,7 @@ if user_input:
     st.session_state.chat_history.append({"role": "user", "content": user_input})
     st.chat_message("user").write(user_input)
 
+    # ✅ Ensure inputs are stored correctly and don't get erased
     if not ask_for_missing_details():
         st.stop()
 
