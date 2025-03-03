@@ -81,6 +81,12 @@ def convert_to_iso_date(date_str):
         except ValueError:
             return None
 
+# ✅ Extract numbers from user responses
+def extract_number(text):
+    """Extract numeric values from a string."""
+    match = re.search(r"\d+", text)
+    return int(match.group()) if match else None
+
 # ✅ Function to Check Missing Details and Ask One at a Time
 def ask_for_missing_details():
     """Ask the user for missing flight details one at a time."""
@@ -180,7 +186,10 @@ if user_input:
         if flight_details[key]:  
             st.session_state.flight_request[key] = flight_details[key]  
 
-    # ✅ Ask for missing details before proceeding
+    # ✅ Extract number of adults from response
+    if isinstance(user_input, str) and "adults" in st.session_state.flight_request and not st.session_state.flight_request["adults"]:
+        st.session_state.flight_request["adults"] = extract_number(user_input)
+
     if not ask_for_missing_details():
         st.stop()
 
@@ -189,5 +198,3 @@ if user_input:
         df = pd.DataFrame(flights)
         st.write("### ✈️ Top 5 Cheapest Flights")
         st.dataframe(df)
-    else:
-        st.write("🚀 Searching...")
