@@ -22,7 +22,7 @@ if not API_KEY or not API_SECRET or not OPENAI_API_KEY:
 amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-# ✅ Initialize session state
+# ✅ Initialize session state properly
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "flight_request" not in st.session_state:
@@ -53,7 +53,7 @@ def get_iata_code(city_name):
     except ResponseError:
         return None
 
-# ✅ Convert Date to `YYYY-MM-DD`
+# ✅ Convert Date to `YYYY-MM-DD` and Store it Properly
 def convert_to_iso_date(date_str):
     today = datetime.date.today()
     if not date_str or not isinstance(date_str, str):
@@ -78,13 +78,12 @@ def convert_to_iso_date(date_str):
         except ValueError:
             return None
 
-# ✅ Extract numbers from user responses
+# ✅ Extract numbers correctly from user input
 def extract_number(text):
-    """Extract numeric values from a string like '2 adults' or '2'."""
     match = re.search(r"\d+", text)
     return int(match.group()) if match else None
 
-# ✅ Ask for Missing Details (Only One at a Time)
+# ✅ Ask for Missing Details, But Only Once
 def ask_for_missing_details():
     flight_request = st.session_state.flight_request
     missing_questions = {
@@ -95,7 +94,7 @@ def ask_for_missing_details():
     }
 
     for key, question in missing_questions.items():
-        if not flight_request[key]:  
+        if flight_request[key] is None:  # Only ask if it is truly missing
             st.session_state.chat_history.append({"role": "assistant", "content": question})
             st.chat_message("assistant").write(question)
             return False  
@@ -178,11 +177,10 @@ if user_input:
         st.stop()
 
     for key in flight_details:
-        if flight_details[key]:  
+        if flight_details[key] is not None:  
             st.session_state.flight_request[key] = flight_details[key]  
 
-    # ✅ Extract `adults` number from response if missing
-    if "adults" in flight_details and not st.session_state.flight_request["adults"]:
+    if "adults" in flight_details and st.session_state.flight_request["adults"] is None:
         st.session_state.flight_request["adults"] = extract_number(user_input)
 
     if not ask_for_missing_details():
