@@ -155,13 +155,18 @@ if user_input:
     st.session_state.chat_history.append({"role": "user", "content": user_input})
     st.chat_message("user").write(user_input)
 
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[{"role": "system", "content": "Extract flight details from user input as JSON."},
-                  {"role": "user", "content": user_input}]
-    )
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "system", "content": "Extract flight details from user input as JSON."},
+                      {"role": "user", "content": user_input}]
+        )
+        flight_details = json.loads(response.choices[0].message.content)
 
-    flight_details = json.loads(response.choices[0].message.content)
+    except json.JSONDecodeError:
+        st.session_state.chat_history.append({"role": "assistant", "content": "I didn't understand that. Could you clarify?"})
+        st.chat_message("assistant").write("I didn't understand that. Could you clarify?")
+        st.stop()
 
     # ✅ Store user input correctly
     for key in flight_details:
@@ -179,7 +184,6 @@ if user_input:
             st.stop()
 
     flights = search_flights()
-    
     if flights:
         df = pd.DataFrame(flights)
         st.write("### ✈️ Top 5 Cheapest Flights")
