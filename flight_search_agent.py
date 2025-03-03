@@ -22,11 +22,19 @@ if not API_KEY or not API_SECRET or not OPENAI_API_KEY:
 amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-# ✅ Initialize session state for chat history
+# ✅ Initialize session state for tracking user input
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-if "missing_details" not in st.session_state:
-    st.session_state.missing_details = {}
+if "flight_request" not in st.session_state:
+    st.session_state.flight_request = {
+        "origin": None,
+        "destination": None,
+        "departure_date": None,
+        "adults": None,
+        "children": [],
+        "infants": 0,
+        "direct_flight": False
+    }
 
 # ✅ Function to Extract IATA Code (Cache First)
 iata_cache = {}
@@ -73,65 +81,67 @@ def convert_to_iso_date(date_str):
         except ValueError:
             return None
 
-# ✅ Flight Search with Retry for Direct Flights
-def search_flights(origin_code, destination_code, departure_date, adults, children, infants, direct_flight):
-    """Fetch and return top 5 cheapest flight offers from Amadeus API, retrying if direct flights fail."""
-    try:
-        if not origin_code or not destination_code or not departure_date:
-            st.error("❌ Missing valid airport codes or date. Please check your input.")
-            return None
+# ✅ Flight Search Function
+def search_flights():
+    """Fetch and return top 5 cheapest flight offers from Amadeus API."""
+    flight_request = st.session_state.flight_request
 
-        st.write(f"🔍 **Searching flights...**")
-        st.write(f"✈️ From: {origin_code} | 🏁 To: {destination_code} | 📅 Date: {departure_date} | "
-                 f"👨‍👩‍👧 Adults: {adults} | 🧒 Children: {len(children)} | 👶 Infants: {infants} | 🚀 Direct: {direct_flight}")
+    if None in flight_request.values():
+        return None  # Wait until all required info is collected
 
-        time.sleep(1)  # Prevent hitting API rate limits
+    origin_code = get_iata_code(flight_request["origin"])
+    destination_code = get_iata_code(flight_request["destination"])
+    departure_date = convert_to_iso_date(flight_request["departure_date"])
 
-        # ✅ Build API request with proper parameters
-        api_params = {
-            "originLocationCode": origin_code,
-            "destinationLocationCode": destination_code,
-            "departureDate": departure_date,
-            "adults": adults,
-            "children": len(children),
-            "infants": infants,
-            "travelClass": "ECONOMY",
-            "currencyCode": "USD",
-            "max": 10
-        }
+    if not origin_code or not destination_code or not departure_date:
+        return None  # Don't proceed if IATA codes or date conversion failed
 
-        if direct_flight:
-            api_params["nonStop"] = True  
+    st.write(f"🔍 **Searching flights...**")
+    st.write(f"✈️ From: {origin_code} | 🏁 To: {destination_code} | 📅 Date: {departure_date} | "
+             f"👨‍👩‍👧 Adults: {flight_request['adults']} | 🧒 Children: {len(flight_request['children'])} | 👶 Infants: {flight_request['infants']} | 🚀 Direct: {flight_request['direct_flight']}")
 
-        response = amadeus.shopping.flight_offers_search.get(**api_params)
+    time.sleep(1)
 
-        if not response.data:
-            return None
+    api_params = {
+        "originLocationCode": origin_code,
+        "destinationLocationCode": destination_code,
+        "departureDate": departure_date,
+        "adults": flight_request["adults"],
+        "children": len(flight_request["children"]),
+        "infants": flight_request["infants"],
+        "travelClass": "ECONOMY",
+        "currencyCode": "USD",
+        "max": 10
+    }
 
-        flight_data = []
-        for flight in response.data:
-            segments = flight["itineraries"][0]["segments"]
-            num_stops = len(segments) - 1
-            total_price = flight["price"]["total"]
+    if flight_request["direct_flight"]:
+        api_params["nonStop"] = True  
 
-            if direct_flight and num_stops > 0:
-                continue  
+    response = amadeus.shopping.flight_offers_search.get(**api_params)
 
-            flight_data.append({
-                "Airline": segments[0]["carrierCode"],
-                "Flight Number": segments[0]["number"],
-                "Departure": f"{segments[0]['departure']['iataCode']} {segments[0]['departure']['at']}",
-                "Arrival": f"{segments[-1]['arrival']['iataCode']} {segments[-1]['arrival']['at']}",
-                "Stops": num_stops,
-                "Total Price (USD)": total_price
-            })
-
-        flight_data = sorted(flight_data, key=lambda x: float(x["Total Price (USD)"]))[:5]
-
-        return flight_data
-    except ResponseError as e:
-        st.error(f"🚨 API Error: {e.code} - {e.description}")
+    if not response.data:
         return None
+
+    flight_data = []
+    for flight in response.data:
+        segments = flight["itineraries"][0]["segments"]
+        num_stops = len(segments) - 1
+        total_price = flight["price"]["total"]
+
+        if flight_request["direct_flight"] and num_stops > 0:
+            continue  
+
+        flight_data.append({
+            "Airline": segments[0]["carrierCode"],
+            "Flight Number": segments[0]["number"],
+            "Departure": f"{segments[0]['departure']['iataCode']} {segments[0]['departure']['at']}",
+            "Arrival": f"{segments[-1]['arrival']['iataCode']} {segments[-1]['arrival']['at']}",
+            "Stops": num_stops,
+            "Total Price (USD)": total_price
+        })
+
+    flight_data = sorted(flight_data, key=lambda x: float(x["Total Price (USD)"]))[:5]
+    return flight_data
 
 # ✅ Streamlit UI
 st.title("✈️ Flight Search Agent")
@@ -153,29 +163,27 @@ if user_input:
 
     flight_details = json.loads(response.choices[0].message.content)
 
-    # ✅ Ensure missing details are requested before proceeding
-    missing_questions = []
-    if not flight_details.get("origin"):
-        missing_questions.append("📍 Where are you departing from?")
-    if not flight_details.get("destination"):
-        missing_questions.append("🏁 Where do you want to fly to?")
-    if not flight_details.get("departure_date"):
-        missing_questions.append("📅 What date do you want to travel?")
-    if not flight_details.get("adults"):
-        missing_questions.append("👨‍👩‍👧 How many adults are traveling?")
+    # ✅ Update missing details
+    for key in st.session_state.flight_request:
+        if flight_details.get(key):
+            st.session_state.flight_request[key] = flight_details[key]
 
-    if missing_questions:
-        prompt = "\n".join(missing_questions)
-        st.session_state.chat_history.append({"role": "assistant", "content": prompt})
-        st.chat_message("assistant").write(prompt)
-        st.stop()
+    # ✅ Ask only ONE missing detail at a time
+    for key, prompt in [("origin", "📍 Where are you departing from?"),
+                         ("destination", "🏁 Where do you want to fly to?"),
+                         ("departure_date", "📅 What date do you want to travel?"),
+                         ("adults", "👨‍👩‍👧 How many adults are traveling?")]:
+        if not st.session_state.flight_request[key]:
+            st.session_state.chat_history.append({"role": "assistant", "content": prompt})
+            st.chat_message("assistant").write(prompt)
+            st.stop()
 
-    flights = search_flights(get_iata_code(flight_details["origin"]), get_iata_code(flight_details["destination"]),
-                             convert_to_iso_date(flight_details["departure_date"]), flight_details["adults"],
-                             flight_details.get("children", []), flight_details.get("infants", 0),
-                             flight_details.get("direct_flight", False))
-
+    flights = search_flights()
+    
     if flights:
         df = pd.DataFrame(flights)
         st.write("### ✈️ Top 5 Cheapest Flights")
         st.dataframe(df)
+    else:
+        st.write("🚀 Searching...")
+
