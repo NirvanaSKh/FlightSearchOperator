@@ -81,6 +81,24 @@ def convert_to_iso_date(date_str):
         except ValueError:
             return None
 
+# ✅ Function to Check Missing Details and Ask One at a Time
+def ask_for_missing_details():
+    """Ask the user for missing flight details one at a time."""
+    missing_questions = {
+        "origin": "📍 Where are you departing from?",
+        "destination": "🏁 Where do you want to fly to?",
+        "departure_date": "📅 What date do you want to travel?",
+        "adults": "👨‍👩‍👧 How many adults are traveling?"
+    }
+
+    for key, question in missing_questions.items():
+        if not st.session_state.flight_request[key]:
+            st.session_state.chat_history.append({"role": "assistant", "content": question})
+            st.chat_message("assistant").write(question)
+            return False  # Stops after asking one question
+
+    return True  # All details are available
+
 # ✅ Flight Search Function
 def search_flights():
     """Fetch and return top 5 cheapest flight offers from Amadeus API."""
@@ -124,27 +142,10 @@ def search_flights():
 
     flight_data = []
     for flight in response.data:
-        airline_code = flight["validatingAirlineCodes"][0]
-        airline_name = amadeus.reference_data.airlines.get(airlineCodes=airline_code).data[0]["businessName"]
-        
-        price_per_adult = price_per_child = price_per_infant = "N/A"
-        for traveler in flight["travelerPricings"]:
-            traveler_type = traveler["travelerType"]
-            traveler_price = traveler["price"]["total"]
-            if traveler_type == "ADULT":
-                price_per_adult = traveler_price
-            elif traveler_type == "CHILD":
-                price_per_child = traveler_price
-            elif traveler_type in ["HELD_INFANT", "SEATED_INFANT"]:
-                price_per_infant = traveler_price  
-
         flight_data.append({
-            "Airline": airline_name,
+            "Airline": flight["validatingAirlineCodes"][0],
             "Flight Number": flight["itineraries"][0]["segments"][0]["number"],
             "Stops": len(flight["itineraries"][0]["segments"]) - 1,
-            "Price per Adult (USD)": price_per_adult,
-            "Price per Child (USD)": price_per_child,
-            "Price per Infant (USD)": price_per_infant,
             "Total Price (USD)": flight["price"]["total"]
         })
 
@@ -179,8 +180,14 @@ if user_input:
         if flight_details[key]:  
             st.session_state.flight_request[key] = flight_details[key]  
 
+    # ✅ Ask for missing details before proceeding
+    if not ask_for_missing_details():
+        st.stop()
+
     flights = search_flights()
     if flights:
         df = pd.DataFrame(flights)
         st.write("### ✈️ Top 5 Cheapest Flights")
         st.dataframe(df)
+    else:
+        st.write("🚀 Searching...")
