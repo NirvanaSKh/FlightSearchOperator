@@ -94,7 +94,8 @@ def ask_for_missing_details():
         "origin": "📍 Where are you departing from?",
         "destination": "🏁 Where do you want to fly to?",
         "departure_date": "📅 What date do you want to travel?",
-        "adults": "👨‍👩‍👧 How many adults are traveling?"
+        "adults": "👨‍👩‍👧 How many adults are traveling?",
+        "children": "🧒 Are any children traveling? If yes, please provide their ages (comma-separated)."
     }
 
     for key, question in missing_questions.items():
@@ -134,7 +135,7 @@ def search_flights():
         "children": len(flight_request["children"]),
         "infants": flight_request["infants"],
         "travelClass": "ECONOMY",
-        "currencyCode": "USD",
+        "currencyCode": "GBP",
         "max": 10
     }
 
@@ -152,10 +153,10 @@ def search_flights():
             "Airline": flight["validatingAirlineCodes"][0],
             "Flight Number": flight["itineraries"][0]["segments"][0]["number"],
             "Stops": len(flight["itineraries"][0]["segments"]) - 1,
-            "Total Price (USD)": flight["price"]["total"]
+            "Total Price (GBP)": flight["price"]["total"]
         })
 
-    flight_data = sorted(flight_data, key=lambda x: float(x["Total Price (USD)"]))[:5]
+    flight_data = sorted(flight_data, key=lambda x: float(x["Total Price (GBP)"]))[:5]
     return flight_data
 
 # ✅ Streamlit UI
@@ -170,26 +171,6 @@ if user_input:
     st.session_state.chat_history.append({"role": "user", "content": user_input})
     st.chat_message("user").write(user_input)
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "Extract flight details from user input as JSON."},
-                      {"role": "user", "content": user_input}]
-        )
-        flight_details = json.loads(response.choices[0].message.content)
-
-    except json.JSONDecodeError:
-        st.chat_message("assistant").write("I didn't understand that. Could you clarify?")
-        st.stop()
-
-    for key in flight_details:
-        if flight_details[key]:  
-            st.session_state.flight_request[key] = flight_details[key]  
-
-    # ✅ Extract number of adults from response
-    if isinstance(user_input, str) and "adults" in st.session_state.flight_request and not st.session_state.flight_request["adults"]:
-        st.session_state.flight_request["adults"] = extract_number(user_input)
-
     if not ask_for_missing_details():
         st.stop()
 
@@ -198,3 +179,5 @@ if user_input:
         df = pd.DataFrame(flights)
         st.write("### ✈️ Top 5 Cheapest Flights")
         st.dataframe(df)
+    else:
+        st.write("🚀 Searching...")
