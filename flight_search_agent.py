@@ -80,6 +80,7 @@ def convert_to_iso_date(date_str):
 
 # ✅ Extract numbers from user responses
 def extract_number(text):
+    """Extract numeric values from a string like '2 adults' or '2'."""
     match = re.search(r"\d+", text)
     return int(match.group()) if match else None
 
@@ -179,6 +180,10 @@ if user_input:
     for key in flight_details:
         if flight_details[key]:  
             st.session_state.flight_request[key] = flight_details[key]  
+
+    # ✅ Extract `adults` number from response if missing
+    if "adults" in flight_details and not st.session_state.flight_request["adults"]:
+        st.session_state.flight_request["adults"] = extract_number(user_input)
 
     if not ask_for_missing_details():
         st.stop()
