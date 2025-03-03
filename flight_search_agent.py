@@ -22,7 +22,7 @@ if not API_KEY or not API_SECRET or not OPENAI_API_KEY:
 amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
 client = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-# ✅ Initialize session state for tracking user input
+# ✅ Initialize session state
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "flight_request" not in st.session_state:
@@ -36,11 +36,10 @@ if "flight_request" not in st.session_state:
         "direct_flight": False
     }
 
-# ✅ Function to Extract IATA Code (Cache First)
+# ✅ Function to Extract IATA Code
 iata_cache = {}
 
 def get_iata_code(city_name):
-    """Fetch IATA code for a given city."""
     if not city_name:
         return None
     if city_name in iata_cache:
@@ -56,13 +55,11 @@ def get_iata_code(city_name):
 
 # ✅ Convert Date to `YYYY-MM-DD`
 def convert_to_iso_date(date_str):
-    """Convert natural language dates like 'tomorrow' to ISO format (YYYY-MM-DD)."""
     today = datetime.date.today()
     if not date_str or not isinstance(date_str, str):
         return None
 
     date_str = date_str.lower().strip()
-
     if date_str in ["tomorrow", "tmrw"]:
         return (today + datetime.timedelta(days=1)).strftime("%Y-%m-%d")
 
@@ -83,45 +80,40 @@ def convert_to_iso_date(date_str):
 
 # ✅ Extract numbers from user responses
 def extract_number(text):
-    """Extract numeric values from a string."""
     match = re.search(r"\d+", text)
     return int(match.group()) if match else None
 
-# ✅ Function to Check Missing Details and Ask One at a Time
+# ✅ Ask for Missing Details (Only One at a Time)
 def ask_for_missing_details():
-    """Ask the user for missing flight details one at a time, but only if they are truly missing."""
     flight_request = st.session_state.flight_request
-
     missing_questions = {
         "origin": "📍 Where are you departing from?",
         "destination": "🏁 Where do you want to fly to?",
         "departure_date": "📅 What date do you want to travel?",
-        "adults": "👨‍👩‍👧 How many adults are traveling?",
-        "children": "🧒 Are any children traveling? If yes, please provide their ages (comma-separated)."
+        "adults": "👨‍👩‍👧 How many adults are traveling?"
     }
 
     for key, question in missing_questions.items():
-        if not flight_request[key]:  # Only ask if truly missing
+        if not flight_request[key]:  
             st.session_state.chat_history.append({"role": "assistant", "content": question})
             st.chat_message("assistant").write(question)
-            return False  # Stops after asking one question
+            return False  
 
-    return True  # All details are available
+    return True  
 
 # ✅ Flight Search Function
 def search_flights():
-    """Fetch and return top 5 cheapest flight offers from Amadeus API."""
     flight_request = st.session_state.flight_request
 
     if None in [flight_request["origin"], flight_request["destination"], flight_request["departure_date"], flight_request["adults"]]:
-        return None  # Wait until all required info is collected
+        return None  
 
     origin_code = get_iata_code(flight_request["origin"])
     destination_code = get_iata_code(flight_request["destination"])
     departure_date = convert_to_iso_date(flight_request["departure_date"])
 
     if not origin_code or not destination_code or not departure_date:
-        return None  # Don't proceed if IATA codes or date conversion failed
+        return None  
 
     st.write(f"🔍 **Searching flights...**")
     st.write(f"✈️ From: {origin_code} | 🏁 To: {destination_code} | 📅 Date: {departure_date} | "
@@ -173,7 +165,21 @@ if user_input:
     st.session_state.chat_history.append({"role": "user", "content": user_input})
     st.chat_message("user").write(user_input)
 
-    # ✅ Ensure inputs are stored correctly and don't get erased
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "system", "content": "Extract flight details from user input as JSON."},
+                      {"role": "user", "content": user_input}]
+        )
+        flight_details = json.loads(response.choices[0].message.content)
+    except json.JSONDecodeError:
+        st.chat_message("assistant").write("I didn't understand that. Could you clarify?")
+        st.stop()
+
+    for key in flight_details:
+        if flight_details[key]:  
+            st.session_state.flight_request[key] = flight_details[key]  
+
     if not ask_for_missing_details():
         st.stop()
 
@@ -182,5 +188,3 @@ if user_input:
         df = pd.DataFrame(flights)
         st.write("### ✈️ Top 5 Cheapest Flights")
         st.dataframe(df)
-    else:
-        st.write("🚀 Searching...")
