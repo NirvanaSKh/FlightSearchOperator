@@ -124,20 +124,28 @@ def search_flights():
 
     flight_data = []
     for flight in response.data:
-        segments = flight["itineraries"][0]["segments"]
-        num_stops = len(segments) - 1
-        total_price = flight["price"]["total"]
-
-        if flight_request["direct_flight"] and num_stops > 0:
-            continue  
+        airline_code = flight["validatingAirlineCodes"][0]
+        airline_name = amadeus.reference_data.airlines.get(airlineCodes=airline_code).data[0]["businessName"]
+        
+        price_per_adult = price_per_child = price_per_infant = "N/A"
+        for traveler in flight["travelerPricings"]:
+            traveler_type = traveler["travelerType"]
+            traveler_price = traveler["price"]["total"]
+            if traveler_type == "ADULT":
+                price_per_adult = traveler_price
+            elif traveler_type == "CHILD":
+                price_per_child = traveler_price
+            elif traveler_type in ["HELD_INFANT", "SEATED_INFANT"]:
+                price_per_infant = traveler_price  
 
         flight_data.append({
-            "Airline": segments[0]["carrierCode"],
-            "Flight Number": segments[0]["number"],
-            "Departure": f"{segments[0]['departure']['iataCode']} {segments[0]['departure']['at']}",
-            "Arrival": f"{segments[-1]['arrival']['iataCode']} {segments[-1]['arrival']['at']}",
-            "Stops": num_stops,
-            "Total Price (USD)": total_price
+            "Airline": airline_name,
+            "Flight Number": flight["itineraries"][0]["segments"][0]["number"],
+            "Stops": len(flight["itineraries"][0]["segments"]) - 1,
+            "Price per Adult (USD)": price_per_adult,
+            "Price per Child (USD)": price_per_child,
+            "Price per Infant (USD)": price_per_infant,
+            "Total Price (USD)": flight["price"]["total"]
         })
 
     flight_data = sorted(flight_data, key=lambda x: float(x["Total Price (USD)"]))[:5]
@@ -155,35 +163,21 @@ if user_input:
     st.session_state.chat_history.append({"role": "user", "content": user_input})
     st.chat_message("user").write(user_input)
 
-    try:
-        response = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "system", "content": "Extract flight details from user input as JSON."},
-                      {"role": "user", "content": user_input}]
-        )
-        flight_details = json.loads(response.choices[0].message.content)
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",
+        messages=[{"role": "system", "content": "Extract flight details from user input as JSON."},
+                  {"role": "user", "content": user_input}]
+    )
 
-    except json.JSONDecodeError:
-        st.session_state.chat_history.append({"role": "assistant", "content": "I didn't understand that. Could you clarify?"})
-        st.chat_message("assistant").write("I didn't understand that. Could you clarify?")
-        st.stop()
+    flight_details = json.loads(response.choices[0].message.content)
 
     # ✅ Store user input correctly
     for key in flight_details:
         if flight_details[key]:  
             st.session_state.flight_request[key] = flight_details[key]  # ✅ Correctly store provided values
 
-    # ✅ Ask only ONE missing detail at a time
-    for key, prompt in [("origin", "📍 Where are you departing from?"),
-                         ("destination", "🏁 Where do you want to fly to?"),
-                         ("departure_date", "📅 What date do you want to travel?"),
-                         ("adults", "👨‍👩‍👧 How many adults are traveling?")]:
-        if not st.session_state.flight_request[key]:
-            st.session_state.chat_history.append({"role": "assistant", "content": prompt})
-            st.chat_message("assistant").write(prompt)
-            st.stop()
-
     flights = search_flights()
+    
     if flights:
         df = pd.DataFrame(flights)
         st.write("### ✈️ Top 5 Cheapest Flights")
